@@ -85,5 +85,15 @@ lucky_draw/
   - `apps/admin` (Next 14 App Router, 포트 3001, Ant Design).
   - `packages/schemas` (Zod 공유), `packages/api-types` (API 응답 타입 공유), `packages/ui` (공통 컴포넌트).
   - 다음: `pnpm install` 실행 → Docker Compose 기동 → Prisma 스키마 설계.
+- **로컬 환경 부트스트랩 완료**:
+  - nvm-windows 1.2.2 설치(winget) → Node 22.11.0 활성화.
+  - pnpm 9.15.9 전역 설치.
+  - `pnpm install` 성공 (975 패키지, 7분 소요).
+  - `class-validator`, `class-transformer` 추가 설치(ValidationPipe 의존성).
+  - Docker Desktop 기동 → `docker compose up -d` → Postgres 16 / Redis 7 healthy.
+  - `apps/backend/.env` 생성(Prisma가 로컬 .env를 참조).
+  - **첫 Prisma 마이그레이션 성공**: `init_scaffold` → `ScaffoldPing` 테이블 생성.
+  - **스모크 테스트 통과**: `GET /api/health` → 200 `{status:"ok"}`, Postgres `pg_isready` OK, Redis `PING` → PONG.
+  - 다음: Prisma 스키마 본격 설계 (`architecture.md` §5의 14개 엔티티).
 
 <!-- 이후 진행 내역을 아래에 이어 붙여주세요 -->

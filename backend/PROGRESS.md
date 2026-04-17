@@ -73,7 +73,10 @@
 - [x] `src/health.controller.ts` — `GET /api/health` 헬스체크
 - [x] `prisma/schema.prisma` — 데이터소스/제너레이터만, 모델은 다음 단계
 - [x] 핵심 의존성 포함: `@nestjs/jwt`, `@prisma/client`, `argon2`, `ioredis`, `cookie-parser`, `helmet`, `zod`
-- [ ] `pnpm install` 실행 (사용자 로컬에서)
+- [x] `pnpm install` 실행 완료 (975 패키지)
+- [x] Postgres/Redis 컨테이너 기동 + healthy
+- [x] 첫 Prisma 마이그레이션(`init_scaffold`) 성공
+- [x] 헬스체크 엔드포인트 200 OK 확인
 - [ ] Prisma 모델 설계 (다음 작업)
 
 ## 공통 체크리스트

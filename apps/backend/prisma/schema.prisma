@@ -9,3 +9,9 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// 스캐폴딩 검증용 임시 모델. 다음 단계에서 실제 14개 엔티티로 교체.
+model ScaffoldPing {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+}
