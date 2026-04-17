@@ -1,0 +1,35 @@
+{
+  "name": "@lucky/admin",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf .next"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.4.0",
+    "@lucky/api-types": "workspace:*",
+    "@lucky/schemas": "workspace:*",
+    "@tanstack/react-query": "^5.56.2",
+    "antd": "^5.20.6",
+    "next": "^14.2.13",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.53.0",
+    "zod": "^3.23.8",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^14.2.13",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.4"
+  }
+}

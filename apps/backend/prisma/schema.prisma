@@ -1,0 +1,11 @@
+// Prisma schema — 실제 모델은 다음 단계에서 설계합니다.
+// architecture.md §5의 14개 엔티티를 기준으로 작성 예정.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
