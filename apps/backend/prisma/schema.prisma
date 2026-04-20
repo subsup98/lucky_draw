@@ -1,5 +1,9 @@
-// Prisma schema — 실제 모델은 다음 단계에서 설계합니다.
-// architecture.md §5의 14개 엔티티를 기준으로 작성 예정.
+// Prisma schema — architecture.md §5 의 14개 엔티티 본설계.
+// 참조: architecture.md(§5·§6), policy.md, security.md, api.md.
+// - 동시성 제약: Inventory.version (낙관적 락), DrawResult (orderId, ticketIndex) 유니크,
+//   Payment.orderId 유니크 + providerTxId 유니크, Order.idempotencyKey 유니크.
+// - 결제 확정 전 추첨 불가 / 재고 차감·결과 생성은 단일 트랜잭션(SELECT ... FOR UPDATE 또는
+//   version-CAS)로 보장하며, 이는 애플리케이션 레이어 책임.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,8 +14,398 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 스캐폴딩 검증용 임시 모델. 다음 단계에서 실제 14개 엔티티로 교체.
-model ScaffoldPing {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+// =========================================================
+// Enums
+// =========================================================
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  WITHDRAWN
+}
+
+enum KujiStatus {
+  DRAFT
+  SCHEDULED
+  ON_SALE
+  PAUSED
+  SOLD_OUT
+  CLOSED
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  DRAWN
+  CANCELLED
+  REFUNDED
+  FAILED
+}
+
+enum PaymentStatus {
+  REQUESTED
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIAL_REFUNDED
+}
+
+enum ShipmentStatus {
+  PENDING
+  PREPARING
+  SHIPPED
+  IN_TRANSIT
+  DELIVERED
+  RETURNED
+  FAILED
+}
+
+enum InquiryStatus {
+  OPEN
+  IN_PROGRESS
+  ANSWERED
+  CLOSED
+}
+
+enum InquiryCategory {
+  ACCOUNT
+  PAYMENT
+  DRAW
+  SHIPMENT
+  REFUND
+  ETC
+}
+
+enum AdminRole {
+  CONTENT_OPERATOR
+  ORDER_OPERATOR
+  CS_OPERATOR
+  POLICY_OPERATOR
+  SUPER_ADMIN
+}
+
+enum AuditActorType {
+  ADMIN
+  SYSTEM
+  USER
+}
+
+// =========================================================
+// 1. User / Address
+// =========================================================
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  passwordHash  String
+  name          String?
+  phone         String?
+  status        UserStatus @default(ACTIVE)
+  emailVerified Boolean    @default(false)
+  tokenVersion  Int        @default(0)
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  withdrawnAt   DateTime?
+
+  addresses    Address[]
+  orders       Order[]
+  drawResults  DrawResult[]
+  inquiries    Inquiry[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  userId       String
+  recipient    String
+  phone        String
+  postalCode   String
+  addressLine1 String
+  addressLine2 String?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shipments Shipment[]
+
+  @@index([userId])
+  @@index([userId, isDefault])
+}
+
+// =========================================================
+// 2. KujiEvent / PrizeTier / PrizeItem / Inventory
+// =========================================================
+
+model KujiEvent {
+  id              String     @id @default(cuid())
+  slug            String     @unique
+  title           String
+  description     String?
+  coverImageUrl   String?
+  pricePerTicket  Int
+  totalTickets    Int
+  soldTickets     Int        @default(0)
+  perUserLimit    Int?
+  saleStartAt     DateTime
+  saleEndAt       DateTime
+  status          KujiStatus @default(DRAFT)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  prizeTiers  PrizeTier[]
+  orders      Order[]
+  drawResults DrawResult[]
+
+  @@index([status, saleStartAt])
+  @@index([saleEndAt])
+}
+
+model PrizeTier {
+  id            String   @id @default(cuid())
+  kujiEventId   String
+  rank          String   // e.g. "S", "A", "B", "LAST"
+  name          String
+  displayOrder  Int      @default(0)
+  isLastPrize   Boolean  @default(false)
+  totalQuantity Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  kujiEvent   KujiEvent    @relation(fields: [kujiEventId], references: [id], onDelete: Cascade)
+  prizeItems  PrizeItem[]
+  inventory   Inventory?
+  drawResults DrawResult[]
+
+  @@unique([kujiEventId, rank])
+  @@index([kujiEventId, displayOrder])
+}
+
+model PrizeItem {
+  id          String   @id @default(cuid())
+  prizeTierId String
+  name        String
+  imageUrl    String?
+  description String?
+  sku         String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  prizeTier   PrizeTier    @relation(fields: [prizeTierId], references: [id], onDelete: Cascade)
+  drawResults DrawResult[]
+
+  @@index([prizeTierId])
+}
+
+// Inventory: PrizeTier 단위 집계 재고. version 컬럼으로 낙관적 락 수행.
+// 차감 시 UPDATE ... WHERE id = ? AND version = ? SET remaining = remaining - 1, version = version + 1
+model Inventory {
+  id                 String   @id @default(cuid())
+  prizeTierId        String   @unique
+  totalQuantity      Int
+  remainingQuantity  Int
+  version            Int      @default(0)
+  updatedAt          DateTime @updatedAt
+
+  prizeTier PrizeTier @relation(fields: [prizeTierId], references: [id], onDelete: Cascade)
+
+  @@index([remainingQuantity])
+}
+
+// =========================================================
+// 3. Order / Payment / DrawResult / Shipment
+// =========================================================
+
+model Order {
+  id              String      @id @default(cuid())
+  userId          String
+  kujiEventId     String
+  ticketCount     Int
+  unitPrice       Int
+  totalAmount     Int
+  status          OrderStatus @default(PENDING_PAYMENT)
+  idempotencyKey  String      @unique
+  // 주문 시점 배송지 스냅샷 (개인정보 보관 최소화·변경 이력 보존 목적)
+  shippingSnapshot Json?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  paidAt          DateTime?
+  drawnAt         DateTime?
+  cancelledAt     DateTime?
+
+  user        User         @relation(fields: [userId], references: [id])
+  kujiEvent   KujiEvent    @relation(fields: [kujiEventId], references: [id])
+  payment     Payment?
+  drawResults DrawResult[]
+  shipment    Shipment?
+
+  @@index([userId, createdAt])
+  @@index([kujiEventId, status])
+  @@index([status, createdAt])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  orderId        String        @unique
+  provider       String        // e.g. "toss", "kakao"
+  providerTxId   String?       @unique
+  amount         Int
+  currency       String        @default("KRW")
+  status         PaymentStatus @default(REQUESTED)
+  method         String?
+  rawResponse    Json?
+  requestedAt    DateTime      @default(now())
+  paidAt         DateTime?
+  failedAt       DateTime?
+  refundedAt     DateTime?
+  failureReason  String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([provider, status])
+}
+
+// DrawResult: 주문 내 티켓 순번(ticketIndex) 단위로 1행. 동일 티켓에 대해 중복 추첨 방지.
+model DrawResult {
+  id           String   @id @default(cuid())
+  orderId      String
+  userId       String
+  kujiEventId  String
+  ticketIndex  Int      // 1..N within order
+  prizeTierId  String
+  prizeItemId  String?
+  drawnAt      DateTime @default(now())
+  // 추첨 로직 재현성을 위한 시드/스냅샷(운영자 수정 불가, 감사 목적)
+  seed         String?
+  snapshot     Json?
+
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id])
+  kujiEvent KujiEvent  @relation(fields: [kujiEventId], references: [id])
+  prizeTier PrizeTier  @relation(fields: [prizeTierId], references: [id])
+  prizeItem PrizeItem? @relation(fields: [prizeItemId], references: [id])
+
+  @@unique([orderId, ticketIndex])
+  @@index([userId, drawnAt])
+  @@index([kujiEventId, drawnAt])
+  @@index([prizeTierId])
+}
+
+model Shipment {
+  id             String         @id @default(cuid())
+  orderId        String         @unique
+  addressId      String?
+  recipient      String
+  phone          String
+  postalCode     String
+  addressLine1   String
+  addressLine2   String?
+  carrier        String?
+  trackingNumber String?
+  status         ShipmentStatus @default(PENDING)
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  address Address? @relation(fields: [addressId], references: [id])
+
+  @@index([status])
+  @@index([trackingNumber])
+}
+
+// =========================================================
+// 4. Notice / Inquiry
+// =========================================================
+
+model Notice {
+  id          String    @id @default(cuid())
+  title       String
+  body        String
+  isPinned    Boolean   @default(false)
+  publishedAt DateTime?
+  authorId    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author AdminUser? @relation(fields: [authorId], references: [id])
+
+  @@index([isPinned, publishedAt])
+  @@index([publishedAt])
+}
+
+model Inquiry {
+  id         String          @id @default(cuid())
+  userId     String
+  orderId    String?
+  category   InquiryCategory
+  subject    String
+  body       String
+  status     InquiryStatus   @default(OPEN)
+  answer     String?
+  answeredBy String?
+  answeredAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answeredAdm AdminUser? @relation(fields: [answeredBy], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([category])
+}
+
+// =========================================================
+// 5. AdminUser / AuditLog
+// =========================================================
+
+model AdminUser {
+  id            String    @id @default(cuid())
+  username      String    @unique
+  email         String    @unique
+  passwordHash  String
+  role          AdminRole @default(CONTENT_OPERATOR)
+  isActive      Boolean   @default(true)
+  mfaEnabled    Boolean   @default(false)
+  lastLoginAt   DateTime?
+  lastLoginIp   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  notices   Notice[]
+  inquiries Inquiry[]
+  auditLogs AuditLog[]
+
+  @@index([role, isActive])
+}
+
+// AuditLog: 민감 작업 추적. actor 가 Admin/System/User 일 수 있음.
+model AuditLog {
+  id           String         @id @default(cuid())
+  actorType    AuditActorType
+  adminUserId  String?
+  actorUserId  String?
+  action       String         // e.g. "INVENTORY_UPDATE", "REFUND_APPROVE"
+  targetType   String?        // e.g. "Order", "Inventory"
+  targetId     String?
+  ip           String?
+  userAgent    String?
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+
+  adminUser AdminUser? @relation(fields: [adminUserId], references: [id])
+
+  @@index([action, createdAt])
+  @@index([targetType, targetId])
+  @@index([adminUserId, createdAt])
+  @@index([createdAt])
 }

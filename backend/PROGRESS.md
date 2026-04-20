@@ -77,7 +77,8 @@
 - [x] Postgres/Redis 컨테이너 기동 + healthy
 - [x] 첫 Prisma 마이그레이션(`init_scaffold`) 성공
 - [x] 헬스체크 엔드포인트 200 OK 확인
-- [ ] Prisma 모델 설계 (다음 작업)
+- [x] Prisma 모델 설계 (2026-04-20, database/PROGRESS.md 참조)
+- [x] PrismaModule / PrismaService 전역 주입 (2026-04-20)
 
 ## 공통 체크리스트
 - [ ] 프로젝트 스켈레톤(프레임워크 선정, 레이어 구조)
@@ -88,5 +89,8 @@
 - [ ] 감사 로그 수집 공통 레이어
 
 ## 변경 로그
-### YYYY-MM-DD
-- (작업 요약)
+### 2026-04-20
+- **PrismaModule / PrismaService 도입** — `@Global()` 모듈로 전역 주입, `OnModuleInit`에서 `$connect()` + `OnModuleDestroy`에서 `$disconnect()`.
+- `HealthController`에 `SELECT 1` 기반 DB ping 추가 → `GET /api/health` 응답에 `db: "ok"|"down"` 반영.
+- 스모크 테스트 통과: Prisma 연결 로그 + `/api/health` → `{status:"ok", db:"ok"}`.
+- 다음: Auth 도메인(`POST /auth/signup`·`/auth/login`) + Argon2id + JWT 구현.

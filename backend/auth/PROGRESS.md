@@ -145,17 +145,17 @@
 ---
 
 ## 9. 체크리스트
-- [ ] POST /auth/signup + HIBP 대조
-- [ ] POST /auth/login + Device FP + 이메일 알림
-- [ ] POST /auth/refresh (Rotation + Reuse Detection + FP 검증 + CSRF)
-- [ ] POST /auth/logout
+- [~] POST /auth/signup (Argon2id 완료, HIBP 대조 TODO)
+- [~] POST /auth/login (Argon2id 검증·열거 방지·lastLoginAt 완료; Device FP·이메일 알림 TODO)
+- [~] POST /auth/refresh (Rotation + Reuse Detection 완료; FP·CSRF TODO)
+- [x] POST /auth/logout
 - [ ] POST /auth/password/reset
 - [ ] PATCH /auth/password/reset/confirm + HIBP
 - [ ] POST /auth/step-up
 - [ ] POST /admin/login + TOTP 필수
 - [ ] TOTP 등록/검증/백업 코드
-- [ ] Argon2id 해시
-- [ ] Redis refresh 저장소
+- [x] Argon2id 해시
+- [x] Redis refresh 저장소 (SHA-256 해시만 저장, TTL 14일)
 - [ ] Redis 속도 제한
 - [ ] CSRF Double-Submit
 - [ ] tokenVersion 증가 훅
@@ -178,3 +178,12 @@
 - 이상 로그인 감지 + 이메일 알림.
 - CSRF Double-Submit(refresh 전용). 관리자 쿠키 SameSite=Strict + Path=/admin.
 - DPoP·Passkey·소셜 로그인은 2차로 보류.
+
+### 2026-04-20
+- **MVP 인증 플로우 구현 완료**: `POST /auth/signup`·`/login`·`/refresh`·`/logout`.
+- **구현**: Argon2id(m=64MB, t=3, p=4) / JWT HS256 Access(15m, `sub`+`tv`) / Opaque Refresh(`userId.tokenId.secret`, secret만 SHA-256 해시로 Redis 저장, 14d TTL) / HttpOnly·SameSite=Lax 쿠키.
+- **Rotation + Reuse Detection 동작 확인**: rotation된 구 refresh 재사용 시 401 + `tokenVersion++`로 전체 세션 무효화(직후 새 refresh도 거부).
+- **열거 방지**: 미존재 계정에도 더미 Argon2 verify 수행, 실패 메시지 `invalid credentials`로 통일.
+- **JwtAuthGuard**: 토큰 검증 + `tokenVersion` 대조로 강제 로그아웃 대응.
+- Schema 변경: `User.tokenVersion: Int @default(0)` 추가(마이그레이션 `add_user_token_version`).
+- **TODO로 남긴 항목**: RS256 키 로테이션, HIBP 대조, TOTP 2FA, CSRF Double-Submit, Device FP, 계정 잠금, Step-up, 속도 제한, 이상 로그인 감지·이메일 알림, 관리자 전용 `/admin/login`(SameSite=Strict·Path=/admin·TOTP 필수).

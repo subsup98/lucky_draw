@@ -96,4 +96,60 @@ lucky_draw/
   - **스모크 테스트 통과**: `GET /api/health` → 200 `{status:"ok"}`, Postgres `pg_isready` OK, Redis `PING` → PONG.
   - 다음: Prisma 스키마 본격 설계 (`architecture.md` §5의 14개 엔티티).
 
+### 2026-04-20
+- **Prisma 스키마 본설계 완료** — `architecture.md` §5의 14개 엔티티 + 9개 enum + 관계·인덱스·동시성 제약.
+  - 엔티티: User, Address, KujiEvent, PrizeTier, PrizeItem, Inventory, Order, Payment, DrawResult, Shipment, Notice, Inquiry, AdminUser, AuditLog.
+  - **동시성 제약**: `Inventory.version`(낙관적 락 CAS) / `DrawResult(orderId, ticketIndex)` UNIQUE(중복 추첨 차단) / `Payment.orderId`·`providerTxId` UNIQUE(중복 결제 확정 차단) / `Order.idempotencyKey` UNIQUE(주문 멱등성).
+  - **개인정보 최소화**: 주문 시점 배송지 스냅샷(`Order.shippingSnapshot`, `Shipment` 본체 필드)을 원본 `Address`와 분리해 이력 불변성 확보.
+  - **감사 가능성**: `DrawResult.seed`/`snapshot`으로 추첨 재현성 확보(`security.md` §6.3), `AuditLog`에 actor 타입·대상·IP·UA·metadata 구조화.
+  - 마이그레이션 `20260420004637_core_entities` 적용 성공, `ScaffoldPing` 제거, Prisma Client 재생성.
+  - 상세: [database/PROGRESS.md](database/PROGRESS.md#2026-04-20).
+  - 다음: 백엔드 도메인 모듈에 Prisma 연결, 시드 스크립트, 인증(`/auth/signup`·`/auth/login`) 구현.
+- **PrismaModule / PrismaService 전역 주입 완료**.
+  - `@Global()` 모듈 + NestJS 라이프사이클 훅(`OnModuleInit`/`OnModuleDestroy`)으로 `$connect`/`$disconnect` 자동화.
+  - `HealthController`에 DB ping(`SELECT 1`) 추가 → `GET /api/health` 응답에 `db` 상태 포함.
+  - 스모크 테스트 통과(`{status:"ok", db:"ok"}`).
+  - 다음: Auth 도메인 구현(Argon2id 해시 + JWT Access/Refresh, `backend/auth/PROGRESS.md` 설계 기반).
+- **Auth 도메인 MVP 완료** — `POST /auth/signup`·`/login`·`/refresh`·`/logout`.
+  - Argon2id(64MB/3/4) + JWT HS256 Access(15m, `sub`+`tv`) + Opaque Refresh(`userId.tokenId.secret`, SHA-256 해시만 Redis 저장, 14d TTL).
+  - **Rotation + Reuse Detection 동작 확인**: 구 refresh 재사용 → 401 + `tokenVersion++`로 전체 세션 revoke.
+  - HttpOnly·SameSite=Lax 쿠키, 열거 방지(미존재 계정에도 더미 Argon2 verify), `JwtAuthGuard`로 `tokenVersion` 대조.
+  - `User.tokenVersion` 컬럼 추가(마이그레이션 `add_user_token_version`). Redis 전역 모듈 도입.
+  - 스모크 테스트 전부 통과(signup → login → refresh 회전 → 구 refresh 재사용 거부 + 새 refresh까지 전부 무효화).
+  - 상세·TODO(HIBP·TOTP·CSRF·Device FP·계정 잠금·Step-up·속도 제한·RS256)는 [backend/auth/PROGRESS.md](backend/auth/PROGRESS.md#2026-04-20).
+  - 다음: 시드 스크립트 + Kuji 조회 API(`GET /kujis`, `/kujis/:id`, `/kujis/:id/remaining`).
+- **Prisma 시드 + Kuji 조회 API 완료**.
+  - 시드: `prisma/seed.ts` — SUPER_ADMIN(`root` / `AdminPass1!`) + 데모 쿠지(slug=`demo-kuji-2026`, 45티켓, 5개 티어 S/A/B/C/LAST + Inventory + PrizeItem). `prisma.seed` 훅 등록 → `npx prisma db seed`로 실행.
+  - API 3종: `GET /api/kujis`(목록·`remainingTickets`·`isOnSale` 파생 필드), `GET /api/kujis/:id`(티어/아이템/재고 join), `GET /api/kujis/:id/remaining`(티어별 `total`/`remaining`).
+  - 실 호출 검증 통과. 상세: [backend/kuji/PROGRESS.md](backend/kuji/PROGRESS.md#2026-04-20).
+  - 다음: Order → Payment → Draw 핵심 트랜잭션(멱등성·재고 CAS·추첨 엔진).
+
+- **Order 도메인 MVP 완료** — `POST/GET /api/orders`, `POST /api/orders/:id/cancel`.
+  - **멱등성 2단 방어**: Redis 캐시(24h, 최초 응답 재현) + DB `Order.idempotencyKey` UNIQUE(P2002 fallback). 동시 요청 락(`SET NX EX 30`)으로 병렬 중복 차단. 타 유저 키 재사용은 `Conflict`.
+  - **재고 CAS**: `UPDATE KujiEvent SET soldTickets = soldTickets + :n WHERE status='ON_SALE' AND 기간 OK AND soldTickets + :n <= totalTickets` — affected rows 0 시 원인 재조회로 `NotFound / BadRequest / Conflict(out of stock)` 구체화. 티어별 `Inventory`는 추첨 단계에서 차감.
+  - **perUserLimit**: 활성 주문(`status NOT IN (CANCELLED, FAILED, REFUNDED)`) 합산 검증.
+  - **배송지 스냅샷**: DTO 그대로 `Order.shippingSnapshot` JSON + `capturedAt`. `Address` 이후 수정과 독립.
+  - **취소**: 본인 + `PENDING_PAYMENT` 한정, 원자 상태 전이(`WHERE status='PENDING_PAYMENT'`) + `soldTickets` 원복. PAID 이후는 환불 플로우 예정.
+  - 스모크 테스트: 최초 주문 201 → 동일 키 재요청 동일 응답 → perUserLimit 초과 400 → 헤더 누락 400 → 취소 200(`soldTickets` 0/45 복구) → 재취소 409 전부 통과.
+  - 상세: [backend/order/PROGRESS.md](backend/order/PROGRESS.md#2026-04-20).
+  - 다음: Payment 도메인(토스페이먼츠 Mock, PaymentIntent·confirm·webhook), Draw 엔진(`Inventory.version` CAS).
+
+- **Payment 도메인 MVP 완료 (Mock provider)** — `POST /api/payments/{intent,confirm,webhook}`, `GET /api/payments/:orderId`.
+  - **PaymentIntent**: HMAC-SHA256(`intentId.orderId.userId.amount.exp`) 서명 + Redis `pay:intent:{id}` 5m TTL. 주문 소유·`PENDING_PAYMENT` 검증 후 발급, 소비 시 `DEL`.
+  - **Confirm 단일 트랜잭션**: 서명 `timingSafeEqual` → `SELECT ... FOR UPDATE` 로 Order 락 → `amount` 일치 검증 → `Payment` 생성(`orderId`/`providerTxId` UNIQUE) → Order 원자 전이(`WHERE status='PENDING_PAYMENT'`). 이미 PAID 이고 동일 `providerTxId` 면 P2002 fallback으로 멱등 응답.
+  - **Webhook 이중 검증**: `X-Mock-Signature` HMAC(`orderId.providerTxId.status`) 검증 → 동일 `providerTxId` 재수신은 `alreadyProcessed` 200. client confirm 누락 시 webhook 단독으로 Payment 생성 + Order 전이. 경합은 P2002 fallback.
+  - **스모크 테스트**: intent 발급 → confirm 200 → intent 재사용 거부 400 → 위조 서명 401 → webhook 단독 PAID 200 → webhook 재전송 멱등 → 서명 위조 401. 전부 통과.
+  - 상세: [backend/payment/PROGRESS.md](backend/payment/PROGRESS.md#2026-04-20).
+  - 다음: Draw 엔진 — 결제 완료(PAID) 주문에 대해 `Inventory.version` CAS 로 티어별 재고 차감 + `DrawResult(orderId, ticketIndex)` UNIQUE 로 중복 추첨 차단, seed/snapshot 기록.
+
+- **Draw 도메인 MVP 완료 (추첨 엔진 단일 트랜잭션)** — `POST /api/orders/:id/draw`, `GET /api/orders/:id/draws`.
+  - **엔진**: 티켓 1..N 반복 → 잔량>0 티어 전량 조회 → `weight = remainingQuantity` 가중 랜덤 → `Inventory.version` CAS 차감(`UPDATE ... WHERE version=? AND remaining>0`, affected=0 시 재조회 후 재시도 최대 5회) → `DrawResult(orderId, ticketIndex)` UNIQUE 삽입 → 전부 성공 시 Order `PAID → DRAWN` 원자 전이.
+  - **재현성(감사)**: 티켓별 `seed = randomBytes(16).hex`(상위 48비트 → [0,1) 정규화) + `snapshot`(티어별 `remainingBefore`·`version`, 선택된 `tierId/rank`, `totalWeight`, `algorithm: 'weighted-remaining-v1'`) DB 기록.
+  - **단일 트랜잭션**: `$transaction(timeout:15s, ReadCommitted)` + Order `FOR UPDATE` 로 동시 draw 호출·부분 추첨 커밋 방지.
+  - **멱등**: Order.status 이미 DRAWN 이면 트랜잭션 없이 기존 결과 반환. 내부 FOR UPDATE 이후 재확인.
+  - **스모크 (end-to-end 파이프라인)**: signup → login → order(3장) → payment intent → confirm → draw 200(C 2장, A 1장) → draw 재호출 동일 결과 멱등 → GET draws → Order DRAWN → 재고 A 3→2, C 30→28 차감 확인. 전부 통과.
+  - 상세: [backend/draw/PROGRESS.md](backend/draw/PROGRESS.md#2026-04-20).
+- **🎯 Order → Payment → Draw 핵심 트랜잭션 구간 MVP 완료** — 오픈런 스파이크 대응 3중 방어(멱등성 / 재고 CAS / 중복 추첨 차단)가 전부 활성화됨.
+  - 다음: Shipment 자동 생성 훅, AuditLog, 실 PG(토스페이먼츠) 통합, Redis 1차 재고 카운터 레이어, 라스트원상 전용 트리거.
+
 <!-- 이후 진행 내역을 아래에 이어 붙여주세요 -->

@@ -53,17 +53,19 @@ PENDING → PAID → DRAWN → FULFILLED
 ---
 
 ## 체크리스트
-- [ ] POST /payments/confirm (Client confirm + PG 재조회)
-- [ ] POST /payments/intent (PaymentIntent 발급)
-- [ ] POST /webhooks/payment/{provider} (서명 검증 + 독립 처리)
-- [ ] 주문 상태 머신 구현 + SELECT FOR UPDATE
-- [ ] Idempotency-Key 인터셉터
-- [ ] paymentKey UNIQUE 제약
+- [x] POST /payments/intent (PaymentIntent 발급, HMAC 서명, Redis 5m TTL)
+- [x] POST /payments/confirm (서명 검증 + Order `FOR UPDATE` + 단일 트랜잭션 상태 전이)
+- [x] POST /payments/webhook (HMAC 검증 + 멱등, client confirm 누락 대비 webhook-only 경로)
+- [x] 주문 상태 머신 `PENDING_PAYMENT → PAID` 전이 + 동시성 보호
+- [x] paymentKey UNIQUE 제약 (`Payment.orderId`, `Payment.providerTxId`)
+- [x] GET /payments/:orderId (본인 한정)
+- [ ] Idempotency-Key 인터셉터 횡단 (현재 Order에만 적용)
 - [ ] 미확정 PENDING 재조회 배치(5분)
-- [ ] 환불 처리 흐름
-- [ ] 결제 감사 로그
-- [ ] Step-up 가드 부착
-- [ ] 결제 속도 제한
+- [ ] 실제 PG 통합 (토스페이먼츠) — MVP는 mock provider
+- [ ] 환불 처리 흐름 (RefundRequested → Refunded)
+- [ ] 결제 감사 로그(AuditLog)
+- [ ] Step-up 재인증 가드 부착
+- [ ] 결제 속도 제한(rate limit)
 
 ---
 
@@ -72,3 +74,24 @@ PENDING → PAID → DRAWN → FULFILLED
 ### 2026-04-17
 - 결제 보안 5개 축 전부 MVP 반영 확정.
 - PG는 토스페이먼츠 또는 포트원 중 선정 예정(둘 다 Node SDK 공식 지원).
+
+### 2026-04-20
+- **Payment 도메인 MVP 완료 (Mock provider)** — `intent`/`confirm`/`webhook`/`GET`.
+- **축 5. PaymentIntent 사전 발급**
+  - `POST /api/payments/intent` — 주문 소유·`PENDING_PAYMENT` 검증 후 `pi_<hex>` 발급.
+  - 서명: HMAC-SHA256(`intentId.orderId.userId.amount.exp`) with `PAYMENT_INTENT_SECRET`.
+  - Redis `pay:intent:{id}` TTL 5m — 만료/소비 시 자동 무효.
+- **축 2. 상태 머신 + 축 3. UNIQUE**
+  - `POST /api/payments/confirm` — intent Redis 조회 → 서명 `timingSafeEqual` → `SELECT ... FOR UPDATE` 로 Order 락 → `amount` 일치 검증 → `Payment` 생성(`orderId`/`providerTxId` UNIQUE) → Order `WHERE status='PENDING_PAYMENT'` 원자 전이 → intent `DEL`.
+  - 이미 PAID 이고 동일 `providerTxId` 면 멱등 응답(P2002 fallback 포함).
+- **축 4. Client confirm + Webhook 이중 검증**
+  - `POST /api/payments/webhook` — `X-Mock-Signature` 헤더 검증(HMAC `orderId.providerTxId.status`).
+  - 동일 `providerTxId` 이미 처리되었으면 `alreadyProcessed:true` 200.
+  - client confirm 누락 시 webhook 단독으로도 Payment 생성 + Order 전이. PAID 동시 수신은 P2002 fallback으로 멱등.
+  - FAILED/CANCELLED 는 Payment row 없이 Order만 FAILED 전이.
+- **스모크 테스트 결과**
+  - intent 발급 → confirm 200(Payment PAID, Order PAID) → intent 재사용 400 → 위조 서명 401.
+  - 별도 주문에서 webhook 단독 PAID 200 → 재전송 `alreadyProcessed` → 서명 위조 401 → Order PAID 확인. 전부 통과.
+- **후속 과제**
+  - 환불 플로우, Step-up 가드, 속도 제한, PENDING 재조회 배치, 실 PG(토스) 연동.
+  - Draw 도메인에서 `PAID → DRAWN` 전이 훅 연결.
