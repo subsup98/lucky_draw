@@ -8,8 +8,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { AuditLogService, type AuditContext } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { StockService } from '../stock/stock.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
 const IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24; // 24h
@@ -27,12 +29,15 @@ export class OrderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly audit: AuditLogService,
+    private readonly stock: StockService,
   ) {}
 
   async create(
     userId: string,
     dto: CreateOrderDto,
     idempotencyKey: string,
+    ctx?: AuditContext,
   ): Promise<{ status: number; body: unknown }> {
     const cacheKey = this.idempotencyCacheKey(userId, idempotencyKey);
     const lockKey = this.idempotencyLockKey(userId, idempotencyKey);
@@ -65,6 +70,24 @@ export class OrderService {
 
       const response = await this.createTransactional(userId, dto, idempotencyKey);
       await this.redis.set(cacheKey, JSON.stringify(response), 'EX', IDEMPOTENCY_TTL_SECONDS);
+      // 신규 생성 시에만 감사 기록(멱등 재요청·기존 주문 반환은 생략)
+      if (response.status === 201) {
+        const body = response.body as { id?: string; ticketCount?: number; totalAmount?: number; kujiEventId?: string };
+        void this.audit.record({
+          actorType: 'USER',
+          actorUserId: userId,
+          action: 'ORDER_CREATE',
+          targetType: 'Order',
+          targetId: body.id ?? null,
+          ctx,
+          metadata: {
+            kujiEventId: body.kujiEventId,
+            ticketCount: body.ticketCount,
+            totalAmount: body.totalAmount,
+            idempotencyKey,
+          },
+        });
+      }
       return response;
     } finally {
       await this.redis.del(lockKey).catch((err) => {
@@ -92,6 +115,23 @@ export class OrderService {
     }
 
     const now = new Date();
+
+    // Redis 1차 게이트 — DB CAS 이전에 빠르게 out-of-stock 차단.
+    const gate = await this.stock.reserve(dto.kujiEventId, dto.ticketCount);
+    if (!gate.ok) {
+      if (gate.reason === 'out_of_stock') {
+        throw new ConflictException('out of stock');
+      }
+      if (gate.reason === 'not_found') {
+        throw new NotFoundException('kuji not found');
+      }
+    }
+    // 이 지점 이후에 throw 되는 모든 경로는 Redis 를 복구해야 한다.
+    const releaseOnFail = async () => {
+      if (gate.ok && gate.gated) {
+        await this.stock.release(dto.kujiEventId, dto.ticketCount);
+      }
+    };
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -191,9 +231,13 @@ export class OrderService {
           select: this.orderSelect(),
         });
         if (dup && dup.userId === userId) {
+          // 기존 주문이 이미 재고를 점유하고 있으므로 이번 reserve 분은 반환.
+          await releaseOnFail();
           return { status: 200, body: this.serializeOrder(dup) };
         }
       }
+      // 모든 실패 경로(validation·재고·락 경합 등)에서 Redis 복구
+      await releaseOnFail();
       throw err;
     }
   }
@@ -222,7 +266,7 @@ export class OrderService {
    * PENDING_PAYMENT 상태의 주문을 취소하고, 이벤트 soldTickets 을 원상복귀.
    * 이미 결제된 주문은 결제 도메인의 환불 플로우로 처리 — 여기선 거부.
    */
-  async cancel(userId: string, orderId: string) {
+  async cancel(userId: string, orderId: string, ctx?: AuditContext) {
     const result = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.findUnique({
         where: { id: orderId },
@@ -269,6 +313,16 @@ export class OrderService {
     });
 
     if (!result) throw new ServiceUnavailableException('order not found after cancel');
+    // Redis 1차 카운터도 복구 (DB soldTickets 복구와 별개)
+    await this.stock.release(result.kujiEventId, result.ticketCount);
+    void this.audit.record({
+      actorType: 'USER',
+      actorUserId: userId,
+      action: 'ORDER_CANCEL',
+      targetType: 'Order',
+      targetId: orderId,
+      ctx,
+    });
     return this.serializeOrder(result);
   }
 

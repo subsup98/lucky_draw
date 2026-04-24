@@ -11,8 +11,8 @@
 - [x] 추첨-재고 차감 원자적 처리 (`Inventory.version` CAS + 재시도 5회 + DrawResult(orderId,ticketIndex) UNIQUE)
 - [x] 난수 생성 전략 (crypto.randomBytes 16B → 상위 48비트 정규화, 티켓별 seed + snapshot 저장)
 - [x] 멱등성 (DRAWN 상태면 기존 결과 그대로 반환)
-- [ ] 추첨 감사 로그 (AuditLog)
-- [ ] 라스트원상 전용 트리거(마지막 티켓 구매자 자동 수여)
+- [x] 추첨 감사 로그 (AuditLog) — 2026-04-21 `DRAW_EXECUTE` 훅 주입
+- [x] 라스트원상 전용 트리거(마지막 티켓 구매자 자동 수여) — 2026-04-21
 
 ## 의사결정
 - **난수 소스**: 티켓마다 `randomBytes(16)` → hex seed 16바이트 저장.
@@ -32,7 +32,22 @@
 - **멱등 입구**: Order.status 가 이미 DRAWN 이면 트랜잭션 진입 없이 `loadResults` 반환. 트랜잭션 내부에서도 FOR UPDATE 이후 상태 재확인.
 - **스모크 테스트**: 3장 주문 → 결제 → draw 200 (C 2장, A 1장 추첨) → 재호출 동일 결과 멱등 반환 → 재고 확인(A 3→2, C 30→28, soldTickets 누적 증가) → Order DRAWN 전이. 전부 통과.
 - **후속 과제**
-  - 라스트원상(LAST)은 현재 일반 티어로 처리 중 — 정책에 맞게 "마지막 티켓 구매자 자동 수여" 로직 추가 필요.
   - 결과 조회 UI용 `PrizeItem` 랜덤 선택(현재는 `createdAt asc` 첫 번째). 실제로는 같은 티어 내 복수 아이템 중 1개를 동적 선택.
-  - AuditLog에 추첨 실행 기록.
-  - Shipment 자동 생성 훅(추첨 성공 시).
+
+### 2026-04-21
+- **라스트원상 전용 트리거 완료** — `DrawService` 에 `isLastPrize=true` 티어 자동 배정.
+- **판정 규칙**: Draw 트랜잭션 내부에서 `isLastPrizeOrder(tx, kujiEventId, orderId)` 가 다음 모두를 검사.
+  - (1) `KujiEvent.soldTickets == totalTickets` — 이벤트 완매.
+  - (2) 해당 주문이 이 이벤트의 최신 PAID/DRAWN 주문(`createdAt desc`).
+  - (3) 루프 인덱스 `i == locked.ticketCount` — 이 주문의 마지막 티켓.
+  - 세 조건 모두 만족 시 `awardLastPrize=true`.
+- **엔진 분기**: `drawOneWithCAS(tx, eventId, orderId, userId, ticketIndex, awardLastPrize=false)` 6번째 파라미터 추가. 티어 후보 쿼리에 `AND pt."isLastPrize" = ${awardLastPrize}` 필터 — 이로써:
+  - 일반 추첨(`false`): 라스트 티어가 후보에서 제외 → 일반 당첨으로 라스트 재고가 소비되지 않음.
+  - 라스트 추첨(`true`): `isLastPrize=true` 티어만 후보 → 자동 배정.
+- **스냅샷**: `algorithm` 필드를 분기별로 구분(`weighted-remaining-v1` / `last-prize-v1`), `lastPrize: boolean` 플래그도 저장.
+- **스모크 테스트**: 기존 15/45 상태에서 신규 3명이 각 10장 주문/결제 → 완매(45/45). o3(최신 주문) 10번 티켓이 `LAST*(isLastPrize=true)` 당첨, 나머지 29티켓은 모두 B/C/A(일반 가중), LAST 재고 1→0 정확히 1회. 이전 주문 o1/o2는 라스트 미획득. 전부 통과.
+
+### 2026-04-22
+- **자동 추첨 트리거 도입** — Draw 모듈 자체는 무변경, 단 `DrawService.execute` 가 `PaymentService.confirm/webhook` 의 PAID 전이 직후 자동 호출되도록 호출 측이 변경됨. (상세: [backend/payment/PROGRESS.md](../payment/PROGRESS.md#2026-04-22))
+- 멱등 경로(이미 DRAWN) 호출 시 기존 결과 그대로 반환하는 동작은 그대로 — `POST /orders/:id/draw` 는 자동 추첨 실패 시 비상 재시도 엔드포인트로 보존.
+- 라스트원 트리거(`isLastPrizeOrder`)는 이제 결제 시점 = 추첨 시점이 즉시 일치하므로 "주문 순서 = 추첨 순서" 가 보장됨 — 더 직관적이고 race condition 가능성 축소.

@@ -60,6 +60,7 @@ enum ShipmentStatus {
   IN_TRANSIT
   DELIVERED
   RETURNED
+  CANCELLED
   FAILED
 }
 
@@ -168,15 +169,18 @@ model KujiEvent {
 }
 
 model PrizeTier {
-  id            String   @id @default(cuid())
-  kujiEventId   String
-  rank          String   // e.g. "S", "A", "B", "LAST"
-  name          String
-  displayOrder  Int      @default(0)
-  isLastPrize   Boolean  @default(false)
-  totalQuantity Int
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  kujiEventId     String
+  rank            String   // e.g. "S", "A", "B", "LAST"
+  name            String
+  displayOrder    Int      @default(0)
+  isLastPrize     Boolean  @default(false)
+  totalQuantity   Int
+  // 추첨 결과 연출 프리셋. null 이면 rank 기반 기본값 사용.
+  // 값 예: "simple" | "flip" | "slot" | "confetti"
+  animationPreset String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   kujiEvent   KujiEvent    @relation(fields: [kujiEventId], references: [id], onDelete: Cascade)
   prizeItems  PrizeItem[]
@@ -263,8 +267,10 @@ model Payment {
   requestedAt    DateTime      @default(now())
   paidAt         DateTime?
   failedAt       DateTime?
-  refundedAt     DateTime?
-  failureReason  String?
+  refundedAt        DateTime?
+  refundReason      String?
+  refundedByAdminId String?
+  failureReason     String?
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -323,6 +329,43 @@ model Shipment {
 }
 
 // =========================================================
+// 3.5 Banner / SiteConfig — 운영 배너 + 전역 on/off 킬스위치
+// =========================================================
+
+enum BannerPlacement {
+  MAIN_HERO        // 메인 상단 큰 슬라이더
+  MAIN_SIDE        // 메인/사이드 팸플릿 위젯
+  KUJI_DETAIL_TOP  // 쿠지 상세 페이지 상단 띠
+  POPUP            // 첫 방문 팝업
+}
+
+model Banner {
+  id          String          @id @default(cuid())
+  placement   BannerPlacement
+  title       String
+  body        String?
+  imageUrl    String?
+  linkUrl     String?
+  priority    Int             @default(0)   // 내림차순 정렬 (큰 값이 위)
+  isActive    Boolean         @default(true)
+  startAt     DateTime?
+  endAt       DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([placement, isActive, priority])
+  @@index([placement, startAt, endAt])
+}
+
+/// 전역 모듈 on/off 및 단순 설정값 key-value 저장소.
+/// 예: key="banner.enabled" value=true, key="draw.animation.enabled" value=true
+model SiteConfig {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// =========================================================
 // 4. Notice / Inquiry
 // =========================================================
 
@@ -369,23 +412,45 @@ model Inquiry {
 // =========================================================
 
 model AdminUser {
-  id            String    @id @default(cuid())
-  username      String    @unique
-  email         String    @unique
-  passwordHash  String
-  role          AdminRole @default(CONTENT_OPERATOR)
-  isActive      Boolean   @default(true)
-  mfaEnabled    Boolean   @default(false)
-  lastLoginAt   DateTime?
-  lastLoginIp   String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  username         String    @unique
+  email            String    @unique
+  passwordHash     String
+  role             AdminRole @default(CONTENT_OPERATOR)
+  isActive         Boolean   @default(true)
+  mfaEnabled       Boolean   @default(false)
+  // TOTP 2FA: enrolledAt 이 null 이면 최초 로그인 시 QR 등록 강제.
+  totpSecret       String?
+  totpEnrolledAt   DateTime?
+  // 로그인 잠금: 5회 실패 시 15분 잠금. 성공 시 0 으로 리셋.
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  // Access JWT 무효화용 (User 와 동일 패턴).
+  tokenVersion     Int       @default(0)
+  lastLoginAt      DateTime?
+  lastLoginIp      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  notices   Notice[]
-  inquiries Inquiry[]
-  auditLogs AuditLog[]
+  notices     Notice[]
+  inquiries   Inquiry[]
+  auditLogs   AuditLog[]
+  backupCodes AdminBackupCode[]
 
   @@index([role, isActive])
+}
+
+// TOTP 디바이스 분실 대비 일회성 백업 코드. 사용 시 usedAt 설정.
+model AdminBackupCode {
+  id           String    @id @default(cuid())
+  adminUserId  String
+  codeHash     String
+  usedAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
 }
 
 // AuditLog: 민감 작업 추적. actor 가 Admin/System/User 일 수 있음.

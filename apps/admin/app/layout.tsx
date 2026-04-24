@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "lucky_draw admin",
@@ -8,7 +9,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body style={{ margin: 0 }}>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

@@ -2,17 +2,21 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { extractAuditCtx } from '../audit-log/audit-context';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { ConfirmPaymentDto, CreateIntentDto, WebhookPaymentDto } from './dto/intent.dto';
+import { CreateIntentDto } from './dto/intent.dto';
 import { PaymentService } from './payment.service';
+
+type RawBodyRequest = Request & { rawBody?: Buffer };
 
 @Controller('payments')
 export class PaymentController {
@@ -27,17 +31,22 @@ export class PaymentController {
   @Post('confirm')
   @UseGuards(JwtAuthGuard)
   @HttpCode(200)
-  confirm(@CurrentUser() user: AuthUser, @Body() dto: ConfirmPaymentDto) {
-    return this.payments.confirm(user.id, dto);
+  confirm(
+    @CurrentUser() user: AuthUser,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request,
+  ) {
+    return this.payments.confirm(user.id, body, extractAuditCtx(req));
   }
 
   @Post('webhook')
   @HttpCode(200)
-  webhook(
-    @Body() dto: WebhookPaymentDto,
-    @Headers('x-mock-signature') signature: string | undefined,
-  ) {
-    return this.payments.webhook(dto, signature);
+  webhook(@Req() req: RawBodyRequest) {
+    const raw = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
+    return this.payments.webhook(
+      { rawBody: raw, headers: req.headers as Record<string, string | string[] | undefined> },
+      extractAuditCtx(req),
+    );
   }
 
   @Get(':orderId')

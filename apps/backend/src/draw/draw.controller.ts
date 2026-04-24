@@ -4,8 +4,11 @@ import {
   HttpCode,
   Param,
   Post,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { extractAuditCtx } from '../audit-log/audit-context';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -18,8 +21,12 @@ export class DrawController {
 
   @Post('draw')
   @HttpCode(200)
-  execute(@CurrentUser() user: AuthUser, @Param('orderId') orderId: string) {
-    return this.draw.execute(user.id, orderId);
+  execute(
+    @CurrentUser() user: AuthUser,
+    @Param('orderId') orderId: string,
+    @Req() req: Request,
+  ) {
+    return this.draw.execute(user.id, orderId, extractAuditCtx(req));
   }
 
   @Get('draws')

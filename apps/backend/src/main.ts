@@ -3,13 +3,15 @@ import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.use(helmet());
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new AllExceptionsFilter());
   app.setGlobalPrefix('api');
 
   const port = Number(process.env.BACKEND_PORT ?? 4000);

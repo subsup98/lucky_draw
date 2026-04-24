@@ -30,3 +30,13 @@
 - 관리자용 `PATCH /admin/orders/{orderId}/shipment` (carrier·trackingNumber·status 수동 업데이트)
 - 택배사 API 연동 추상화(CJ대한통운 / 우체국 / 로젠 등)
 - 상태 전이 정의·권한 체크(관리자만 SHIPPED 전이 가능 등)
+
+### 2026-04-23
+- **관리자 배송 관리 API 완료** — `src/shipment/admin-shipment.controller.ts` (`@UseGuards(AdminJwtAuthGuard)`).
+- `GET /api/admin/shipments` (status·trackingNumber 필터, cursor 페이지네이션) + order/user/kuji join.
+- `GET /api/admin/shipments/:id` 상세.
+- `PATCH /api/admin/shipments/:id` — `{status?, carrier?, trackingNumber?}`.
+  - **상태 전이 그래프** 적용: PENDING→PREPARING→SHIPPED→IN_TRANSIT→DELIVERED 정방향 + PENDING/PREPARING→CANCELLED + SHIPPED/IN_TRANSIT→RETURNED + 모든 활성 상태→FAILED. 역방향 전이는 ConflictException.
+  - SHIPPED 전이 시 `shippedAt=now`, DELIVERED 전이 시 `deliveredAt=now` 자동.
+  - `SHIPMENT_UPDATE` audit log 기록(from/to, changed 필드, carrier/trackingNumber).
+- 6 패키지 typecheck 통과.

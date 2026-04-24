@@ -93,5 +93,45 @@ PENDING → PAID → DRAWN → FULFILLED
   - intent 발급 → confirm 200(Payment PAID, Order PAID) → intent 재사용 400 → 위조 서명 401.
   - 별도 주문에서 webhook 단독 PAID 200 → 재전송 `alreadyProcessed` → 서명 위조 401 → Order PAID 확인. 전부 통과.
 - **후속 과제**
-  - 환불 플로우, Step-up 가드, 속도 제한, PENDING 재조회 배치, 실 PG(토스) 연동.
+  - 환불 플로우, Step-up 가드, 속도 제한, PENDING 재조회 배치.
   - Draw 도메인에서 `PAID → DRAWN` 전이 훅 연결.
+
+### 2026-04-21
+- **Provider 추상화 + Toss 어댑터 완료** — `PaymentProvider` 인터페이스 + `MockPaymentProvider` / `TossPaymentProvider` 두 구현, 런타임 선택.
+  - **구조**: `payment/providers/payment-provider.ts`(인터페이스·DI 토큰), `mock.provider.ts`(기존 HMAC intent 로직 이관), `toss.provider.ts`(Toss API `POST /v1/payments/confirm` Basic auth 호출).
+  - **DI**: `PaymentModule` useFactory — `PAYMENT_PROVIDER=mock|toss` 환경변수로 선택, 부팅 시 선택값 로깅.
+  - **흐름**:
+    - `createIntent` → `provider.initiate({orderId,userId,amount,orderName})` → `{provider, ...payload}` 반환.
+      - mock: `{paymentIntentId, signature, expiresAt}` (기존).
+      - toss: `{clientKey, orderId, amount, orderName}` — 프론트 Toss SDK 가 그대로 사용.
+    - `confirm(userId, params)` → `provider.confirm` 에서 외부 검증/승인 → 표준 `{providerTxId, amount, method, paidAt, rawResponse}` 로 반환 → DB 트랜잭션으로 Payment 생성 + Order PAID 전이.
+      - toss.confirm 은 `Authorization: Basic base64(secretKey:)` 로 Toss 서버에 직접 승인 호출, `status==='DONE'` + `totalAmount` 검증. 네트워크 실패 → 500, PG 거절 → 400(`toss rejected: <code>`).
+    - `webhook(rawBody, headers)` → `provider.verifyWebhook` 에서 서명 검증 + 표준 이벤트로 변환 → 기존 webhook 트랜잭션 재사용.
+      - toss: `toss-signature` / `x-toss-signature` 헤더의 HMAC-SHA256(body) 검증.
+      - mock: `x-mock-signature` 헤더의 HMAC(`orderId.providerTxId.status`).
+- **rawBody 활성화** — `NestFactory.create(AppModule, { rawBody: true })`. webhook 서명 검증은 바디 원본 바이트 기준이라야 정확.
+- **confirm DTO 완화** — provider마다 필드가 달라 strict DTO 대신 `Record<string,unknown>` 수용, provider 내부에서 필드 검증.
+- **E2E 스모크**
+  - **mock 회귀**: 2장 주문 → intent(provider=mock) → confirm(200 PAID) → 재confirm(200 PAID 멱등) → draw(B,A) 전부 통과.
+  - **toss**: `PAYMENT_PROVIDER=toss` 재기동 후:
+    - intent: `{provider:"toss", clientKey:"test_ck_docs_...", orderId, amount, orderName}` 반환 확인.
+    - 금액 불일치 confirm: 로컬 400 `amount mismatch`(Toss 호출 전).
+    - 위조 paymentKey confirm: 실 Toss sandbox 호출 → 400 `toss rejected: UNAUTHORIZED_KEY`(실제 네트워크 라운드트립 입증).
+    - 웹훅 정상(HMAC 서명 유효): 200 Payment PAID row 생성 + Order PAID 전이.
+    - 웹훅 replay(동일 body): `alreadyProcessed:true` 200.
+    - 위조 서명 / 서명 누락: 401 각각.
+- **후속 과제**
+  - Toss 실 웹훅 포맷은 이벤트별로 상이(가상계좌 deposit 은 서명 有, 카드는 콜백 검증 방식 별도) — 운영 전환 시 이벤트 타입별 어댑터 세분화 필요.
+  - 프런트 Toss SDK 연결(결제창 → successUrl) / 프론트 `paymentKey` 를 confirm 에 전달하는 라우팅.
+  - 환불/부분취소 API, 멀티프로바이더 동시 운영(프로바이더 필드를 Order에 기록).
+
+### 2026-04-22
+- **결제 즉시 자동 추첨 — confirm/webhook PAID 전이 직후 `DrawService.execute` 자동 호출**.
+  - 배경: PAID 상태 잔류(사용자가 추첨 안 누르고 묵혀두는 케이스)는 라스트원 트리거·재고·회계 처리를 모두 복잡하게 만듦. 일본 一番くじONLINE 등 업계 표준이 「결제 = 자동 추첨」 — 동일 모델로 정렬.
+  - 변경: `PaymentModule.imports += DrawModule`. `PaymentService` 에 `DrawService` 주입 + `autoDraw(userId, orderId, ctx)` 헬퍼 추가.
+  - 트랜잭션 분리: confirm tx 커밋 → 별도 draw tx 실행. 이유: draw 자체가 `$transaction + Order FOR UPDATE` 라 confirm tx 내부에 중첩하면 Prisma interactive tx 제약 위반.
+  - 실패 격리: 추첨 예외는 Logger.warn 후 swallow — Order는 PAID 잔류, `POST /orders/:id/draw` 비상 재시도 경로 그대로 유지. 결제 응답을 깨뜨리지 않음.
+  - 응답 호환: confirm 응답 구조에 `drawResults: { orderId, ticketCount, results } | null` 옵셔널 추가. 멱등 재호출(이미 PAID/DRAWN, P2002 fallback 포함)도 동일 모양.
+  - webhook 단독 확정 경로: client confirm 누락된 사용자도 webhook 수신 시 Order 소유자 userId 조회 후 자동 추첨 → 사용자가 다시 들어와 클릭 안 해도 결과까지 확정. audit log 는 `PAYMENT_WEBHOOK_CONFIRM`(SYSTEM) + `DRAW_EXECUTE`(USER, order owner) 분리 기록.
+  - 스모크 (mock provider, 전부 통과): order(2장) → confirm 200 응답에 `drawResults.results` 2건 + Order `status=DRAWN` 즉시 + audit `ORDER_CREATE / PAYMENT_CONFIRM / DRAW_EXECUTE` 정확히 3건. POST `/orders/:id/draw` 재호출 시 동일 결과(멱등) + audit 추가 안 됨.
+  - 향후: 환불 코드의 PAID 분기는 사실상 사문화(0초 미만), 보존만. webhook 지연/auto-draw 실패 케이스를 위해 PAID 환불 분기는 유지 필요.

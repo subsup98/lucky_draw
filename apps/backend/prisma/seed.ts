@@ -4,10 +4,11 @@ import * as argon2 from 'argon2';
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminEmail = 'admin@lucky.local';
-  const adminUsername = 'root';
-  const adminPassword = 'AdminPass1!';
+  const adminUsername = process.env.ADMIN_SEED_USERNAME ?? 'root';
+  const adminEmail = process.env.ADMIN_SEED_EMAIL ?? 'admin@lucky.local';
+  const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? 'AdminPass1!';
   const adminHash = await argon2.hash(adminPassword, { type: argon2.argon2id });
+  // TOTP 는 최초 로그인 시 강제 등록되므로 시드는 미등록 상태로만 생성.
   await prisma.adminUser.upsert({
     where: { username: adminUsername },
     update: {},
@@ -16,6 +17,8 @@ async function main() {
       email: adminEmail,
       passwordHash: adminHash,
       role: 'SUPER_ADMIN',
+      mfaEnabled: false,
+      totpSecret: null,
     },
   });
 

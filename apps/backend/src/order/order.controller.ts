@@ -7,10 +7,12 @@ import {
   HttpCode,
   Param,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { extractAuditCtx } from '../audit-log/audit-context';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -29,12 +31,18 @@ export class OrderController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateOrderDto,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     if (!idempotencyKey || !IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
       throw new BadRequestException('Idempotency-Key header required (16-128 chars, alnum/_/-)');
     }
-    const result = await this.orders.create(user.id, dto, idempotencyKey);
+    const result = await this.orders.create(
+      user.id,
+      dto,
+      idempotencyKey,
+      extractAuditCtx(req),
+    );
     res.status(result.status);
     return result.body;
   }
@@ -51,7 +59,11 @@ export class OrderController {
 
   @Post(':id/cancel')
   @HttpCode(200)
-  cancel(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.orders.cancel(user.id, id);
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    return this.orders.cancel(user.id, id, extractAuditCtx(req));
   }
 }
