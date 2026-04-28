@@ -3,6 +3,7 @@ export interface KujiSummary {
   slug: string;
   title: string;
   description?: string | null;
+  coverImageUrl?: string | null;
   pricePerTicket: number;
   totalTickets: number;
   soldTickets: number;

@@ -24,6 +24,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { api, ApiError } from "../../../lib/api";
+import { ImageUploaderField } from "../../../components/ImageUploader";
 
 type KujiStatus =
   | "DRAFT"
@@ -114,6 +115,7 @@ export default function KujiDetailPage() {
     isLastPrize?: boolean;
     animationPreset?: string;
     itemName?: string;
+    itemImageUrl?: string | null;
   }>();
 
   const [tierEditOpen, setTierEditOpen] = useState(false);
@@ -201,7 +203,9 @@ export default function KujiDetailPage() {
           displayOrder: v.displayOrder ?? 0,
           isLastPrize: v.isLastPrize ?? false,
           animationPreset: v.animationPreset || undefined,
-          items: v.itemName ? [{ name: v.itemName }] : undefined,
+          items: v.itemName
+            ? [{ name: v.itemName, imageUrl: v.itemImageUrl ?? undefined }]
+            : undefined,
         }),
       });
       message.success("티어 생성 완료");
@@ -329,7 +333,26 @@ export default function KujiDetailPage() {
     },
     {
       title: "상품",
-      render: (_, r) => r.prizeItems.map((it) => it.name).join(", ") || "-",
+      render: (_, r) => {
+        if (r.prizeItems.length === 0) return "-";
+        return (
+          <Space size={6} wrap>
+            {r.prizeItems.map((it) => (
+              <Space key={it.id} size={6}>
+                {it.imageUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={it.imageUrl}
+                    alt={it.name}
+                    style={{ width: 32, height: 32, objectFit: "cover", borderRadius: 4 }}
+                  />
+                )}
+                <span style={{ fontSize: 12 }}>{it.name}</span>
+              </Space>
+            ))}
+          </Space>
+        );
+      },
     },
     {
       title: "연출",
@@ -399,9 +422,12 @@ export default function KujiDetailPage() {
           </Descriptions.Item>
           <Descriptions.Item label="커버 이미지">
             {detail.coverImageUrl ? (
-              <Typography.Text copyable style={{ fontSize: 11 }}>
-                {detail.coverImageUrl}
-              </Typography.Text>
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={detail.coverImageUrl}
+                alt="커버"
+                style={{ width: 160, height: 90, objectFit: "cover", borderRadius: 4 }}
+              />
             ) : (
               "-"
             )}
@@ -458,8 +484,8 @@ export default function KujiDetailPage() {
           <Form.Item label="설명" name="description" rules={[{ max: 2000 }]}>
             <Input.TextArea rows={3} maxLength={2000} showCount />
           </Form.Item>
-          <Form.Item label="커버 이미지 URL" name="coverImageUrl" rules={[{ max: 500 }]}>
-            <Input />
+          <Form.Item label="커버 이미지" name="coverImageUrl" rules={[{ max: 500 }]}>
+            <ImageUploaderField aspect={16 / 9} aspectLabel="16:9" />
           </Form.Item>
           <Form.Item
             label={`장당 가격 ${saleStarted ? "(판매 시작 후 수정 불가)" : ""}`}
@@ -511,6 +537,9 @@ export default function KujiDetailPage() {
           </Form.Item>
           <Form.Item label="대표 상품명 (선택)" name="itemName" rules={[{ max: 120 }]}>
             <Input placeholder="비워두면 상품 등록 없이 티어만 생성됩니다." />
+          </Form.Item>
+          <Form.Item label="대표 상품 이미지 (선택)" name="itemImageUrl">
+            <ImageUploaderField width={180} height={180} aspect={1} aspectLabel="1:1" />
           </Form.Item>
         </Form>
       </Modal>

@@ -42,7 +42,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         setData({ order, payment, draws, shipment });
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
-          router.push("/login");
+          router.replace("/login");
           return;
         }
         setErr(e instanceof ApiError ? e.message : (e as Error).message);

@@ -4,12 +4,35 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadTossPayments } from "@tosspayments/payment-sdk";
 import { api, ApiError, newIdempotencyKey } from "../../lib/api";
-import type { KujiDetail, IntentResponse, OrderResponse } from "../../lib/types";
+import type { IntentResponse, OrderResponse } from "../../lib/types";
 import { KujiTopBanner } from "../../components/Banners";
+
+// API가 실제로 반환하는 detail 응답 (kuji.service.ts#detail).
+type KujiDetailResponse = {
+  id: string;
+  slug: string;
+  title: string;
+  description?: string | null;
+  coverImageUrl?: string | null;
+  pricePerTicket: number;
+  totalTickets: number;
+  soldTickets: number;
+  perUserLimit?: number | null;
+  saleStartAt: string;
+  saleEndAt: string;
+  status: string;
+  prizeTiers: Array<{
+    id: string;
+    rank: string;
+    name: string;
+    isLastPrize: boolean;
+    inventory: { totalQuantity: number; remainingQuantity: number } | null;
+  }>;
+};
 
 export default function KujiDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const [kuji, setKuji] = useState<KujiDetail | null>(null);
+  const [kuji, setKuji] = useState<KujiDetailResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -22,7 +45,7 @@ export default function KujiDetailPage({ params }: { params: { id: string } }) {
   const [agreeNoRefund, setAgreeNoRefund] = useState(false);
 
   useEffect(() => {
-    api<KujiDetail>(`/api/kujis/${params.id}`)
+    api<KujiDetailResponse>(`/api/kujis/${params.id}`)
       .then(setKuji)
       .catch((e) => setErr(e instanceof ApiError ? e.message : "failed"));
   }, [params.id]);
@@ -94,12 +117,14 @@ export default function KujiDetailPage({ params }: { params: { id: string } }) {
   if (err && !kuji) return <main className="p-6 text-red-600">{err}</main>;
   if (!kuji) return <main className="p-6">불러오는 중...</main>;
 
-  const soldOut = kuji.remainingTickets <= 0;
-  const maxBuyable = Math.min(
-    kuji.remainingTickets,
-    kuji.perUserLimit ?? 30,
-    30,
-  );
+  const remainingTickets = Math.max(0, kuji.totalTickets - kuji.soldTickets);
+  const now = new Date();
+  const isOnSale =
+    kuji.status === "ON_SALE" &&
+    new Date(kuji.saleStartAt) <= now &&
+    new Date(kuji.saleEndAt) >= now;
+  const soldOut = remainingTickets <= 0;
+  const maxBuyable = Math.min(remainingTickets, kuji.perUserLimit ?? 30, 30);
 
   return (
     <main className="mx-auto max-w-2xl p-6">
@@ -107,28 +132,28 @@ export default function KujiDetailPage({ params }: { params: { id: string } }) {
       <h1 className="text-2xl font-bold">{kuji.title}</h1>
       <p className="text-gray-600 mt-1">{kuji.description}</p>
       <p className="mt-2 text-sm">
-        잔여 {kuji.remainingTickets} / {kuji.totalTickets} · 장당{" "}
+        잔여 {remainingTickets} / {kuji.totalTickets} · 장당{" "}
         {kuji.pricePerTicket.toLocaleString()}원
       </p>
 
       <section className="mt-4">
         <h2 className="font-semibold">경품 구성</h2>
         <ul className="mt-2 grid gap-1 text-sm">
-          {kuji.tiers.map((t) => (
+          {kuji.prizeTiers.map((t) => (
             <li key={t.id} className="flex justify-between border-b py-1">
               <span>
                 {t.rank}등 · {t.name}
                 {t.isLastPrize && " 🏆 라스트원"}
               </span>
               <span className="text-gray-600">
-                {t.inventory?.remaining ?? 0} / {t.inventory?.total ?? 0}
+                {t.inventory?.remainingQuantity ?? 0} / {t.inventory?.totalQuantity ?? 0}
               </span>
             </li>
           ))}
         </ul>
       </section>
 
-      {!kuji.isOnSale || soldOut ? (
+      {!isOnSale || soldOut ? (
         <p className="mt-6 p-4 bg-gray-100 rounded">판매 종료</p>
       ) : (
         <form onSubmit={buy} className="mt-6 flex flex-col gap-2">

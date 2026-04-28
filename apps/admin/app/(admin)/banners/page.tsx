@@ -21,6 +21,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { api, ApiError } from "../../lib/api";
+import { ImageUploaderField } from "../../components/ImageUploader";
 
 type Placement = "MAIN_HERO" | "MAIN_SIDE" | "KUJI_DETAIL_TOP" | "POPUP";
 
@@ -297,8 +298,8 @@ export default function AdminBannersPage() {
           <Form.Item label="본문 (선택)" name="body" rules={[{ max: 2000 }]}>
             <Input.TextArea rows={3} maxLength={2000} showCount />
           </Form.Item>
-          <Form.Item label="이미지 URL" name="imageUrl" rules={[{ max: 500 }]}>
-            <Input placeholder="https://..." />
+          <Form.Item label="이미지" name="imageUrl" rules={[{ max: 500 }]}>
+            <ImageUploaderField width={400} height={225} aspect={16 / 9} aspectLabel="16:9" />
           </Form.Item>
           <Form.Item label="링크 URL (선택)" name="linkUrl" rules={[{ max: 500 }]}>
             <Input placeholder="/kujis/... 또는 https://..." />

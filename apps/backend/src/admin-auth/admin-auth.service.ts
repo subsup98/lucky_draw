@@ -177,6 +177,10 @@ export class AdminAuthService {
         where: { id: admin.id },
         data: { failedLoginCount: nextCount, lockedUntil: lockedUntil ?? null },
       });
+      // challenge 살려두기: 잠기지 않은 동안엔 사용자가 즉시 재시도 / 백업코드 전환 가능.
+      if (!lockedUntil) {
+        await this.writeChallenge(payload, params.challengeToken);
+      }
       throw new UnauthorizedException('invalid totp');
     }
 
@@ -216,7 +220,11 @@ export class AdminAuthService {
         break;
       }
     }
-    if (!matchedId) throw new UnauthorizedException('invalid backup code');
+    if (!matchedId) {
+      // challenge 살려두기: 백업코드 오타로 한 번 실패해도 즉시 재시도 가능.
+      await this.writeChallenge(payload, params.challengeToken);
+      throw new UnauthorizedException('invalid backup code');
+    }
 
     await this.prisma.$transaction([
       this.prisma.adminBackupCode.update({

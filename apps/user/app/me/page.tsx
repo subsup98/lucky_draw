@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError } from "../lib/api";
+import { api, ApiError, setAccessToken } from "../lib/api";
 import type { OrderResponse, ShipmentResponse } from "../lib/types";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -39,7 +39,7 @@ export default function MePage() {
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) {
-          router.push("/login");
+          router.replace("/login");
           return;
         }
         setErr(e instanceof ApiError ? e.message : "failed");
@@ -145,6 +145,62 @@ export default function MePage() {
           </ul>
         </section>
       )}
+
+      <WithdrawSection />
     </main>
+  );
+}
+
+function WithdrawSection() {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function withdraw() {
+    const ok = window.confirm(
+      [
+        "정말 회원 탈퇴하시겠습니까?",
+        "",
+        "• 탈퇴 즉시 모든 세션이 만료됩니다.",
+        "• 30일 후 이메일/이름/전화번호가 자동 익명화됩니다.",
+        "• 주문/결제/배송 이력은 전자상거래법에 따라 5년 보관됩니다.",
+        "• 단순변심 환불은 불가합니다.",
+        "",
+        "되돌릴 수 없습니다.",
+      ].join("\n"),
+    );
+    if (!ok) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/api/me/withdraw", { method: "POST" });
+      setAccessToken(null);
+      try {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      } catch {
+        /* ignore */
+      }
+      router.replace("/login?withdrawn=1");
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "탈퇴 처리 실패");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-12 pt-6 border-t">
+      <h2 className="text-sm font-semibold text-gray-700">계정 관리</h2>
+      <p className="text-xs text-gray-500 mt-2">
+        회원 탈퇴 시 30일 후 개인정보가 자동 익명화됩니다. 주문/결제/배송 이력은 법정 보관 기간(5년) 동안 유지됩니다.
+      </p>
+      {err && <p className="text-red-600 text-sm mt-2">{err}</p>}
+      <button
+        onClick={withdraw}
+        disabled={busy}
+        className="mt-3 text-sm text-red-600 hover:underline disabled:opacity-50"
+      >
+        {busy ? "처리 중..." : "회원 탈퇴"}
+      </button>
+    </section>
   );
 }

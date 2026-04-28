@@ -15,6 +15,7 @@ import {
 } from "antd";
 import type { Dayjs } from "dayjs";
 import { api, ApiError } from "../../../lib/api";
+import { ImageUploaderField } from "../../../components/ImageUploader";
 
 type Values = {
   slug: string;
@@ -99,8 +100,8 @@ export default function NewKujiPage() {
           <Form.Item label="설명" name="description" rules={[{ max: 2000 }]}>
             <Input.TextArea rows={3} maxLength={2000} showCount />
           </Form.Item>
-          <Form.Item label="커버 이미지 URL" name="coverImageUrl" rules={[{ max: 500 }]}>
-            <Input placeholder="https://..." />
+          <Form.Item label="커버 이미지" name="coverImageUrl" rules={[{ max: 500 }]}>
+            <ImageUploaderField aspect={16 / 9} aspectLabel="16:9" />
           </Form.Item>
           <Space style={{ width: "100%" }}>
             <Form.Item
