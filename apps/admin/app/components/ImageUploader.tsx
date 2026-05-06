@@ -138,7 +138,7 @@ export function ImageUploader({
   async function uploadBlob(blob: Blob, filename: string, mime: string) {
     const form = new FormData();
     form.append("file", blob, filename);
-    const token = getAccessToken();
+    const token = await getAccessToken();
     setUploading(true);
     try {
       const res = await fetch("/api/admin/upload/image", {
@@ -194,7 +194,7 @@ export function ImageUploader({
     if (!value) return;
     const filename = value.split("/").pop();
     if (!filename) return;
-    const token = getAccessToken();
+    const token = await getAccessToken();
     try {
       await fetch(`/api/admin/upload/${encodeURIComponent(filename)}`, {
         method: "DELETE",

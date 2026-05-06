@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ant-design/icons": "^5.4.0",
+    "@lucky/api-client": "workspace:*",
     "@lucky/api-types": "workspace:*",
     "@lucky/schemas": "workspace:*",
     "@tanstack/react-query": "^5.56.2",

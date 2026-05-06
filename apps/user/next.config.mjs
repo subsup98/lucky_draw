@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@lucky/ui", "@lucky/schemas", "@lucky/api-types"],
+  transpilePackages: ["@lucky/ui", "@lucky/schemas", "@lucky/api-types", "@lucky/api-client"],
   async rewrites() {
     const backend = process.env.BACKEND_ORIGIN ?? "http://localhost:4000";
     return [

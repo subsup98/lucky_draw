@@ -11,6 +11,7 @@
     "clean": "rimraf .next"
   },
   "dependencies": {
+    "@lucky/api-client": "workspace:*",
     "@lucky/api-types": "workspace:*",
     "@lucky/schemas": "workspace:*",
     "@lucky/ui": "workspace:*",
