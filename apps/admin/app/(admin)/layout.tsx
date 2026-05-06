@@ -12,6 +12,7 @@ const items = [
   { key: "/kujis", label: "쿠지 관리" },
   { key: "/orders", label: "주문 관리" },
   { key: "/shipments", label: "배송 관리" },
+  { key: "/users", label: "회원 관리" },
   { key: "/notices", label: "공지 관리" },
   { key: "/inquiries", label: "문의 관리" },
   { key: "/banners", label: "배너 관리" },

@@ -44,3 +44,6 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# Uploaded files (dev only, prod uses S3/R2)
+apps/backend/uploads/

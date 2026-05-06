@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuthModule } from './auth/auth.module';
@@ -15,12 +16,15 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { RedisModule } from './redis/redis.module';
 import { SiteConfigModule } from './site-config/site-config.module';
+import { UploadModule } from './upload/upload.module';
+import { UserModule } from './user/user.module';
 import { ShipmentModule } from './shipment/shipment.module';
 import { StockModule } from './stock/stock.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
     RateLimitModule,
@@ -37,6 +41,8 @@ import { StockModule } from './stock/stock.module';
     InquiryModule,
     SiteConfigModule,
     BannerModule,
+    UploadModule,
+    UserModule,
   ],
   controllers: [HealthController],
 })

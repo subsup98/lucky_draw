@@ -111,6 +111,10 @@ model User {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   withdrawnAt   DateTime?
+  // 탈퇴 후 30일 유예 거쳐 익명화된 시점. NULL 이면 아직 익명화 안 됨.
+  // 익명화 시 email 은 `withdrawn_<id>@anon.local`, name/phone 은 null, passwordHash 는 랜덤(로그인 차단).
+  // 주문·추첨·배송 이력은 외래키 그대로 유지(전자상거래법 5년 보관).
+  anonymizedAt  DateTime?
 
   addresses    Address[]
   orders       Order[]
