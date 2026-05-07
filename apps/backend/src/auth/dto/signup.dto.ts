@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsDateString, IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class SignupDto {
   @IsEmail()
@@ -19,4 +19,9 @@ export class SignupDto {
   @IsString()
   @MaxLength(40)
   name?: string;
+
+  // 만 14세 이상 검증용. 가입 시점에만 검증, 이후 사용 안 함.
+  // 형식: YYYY-MM-DD
+  @IsDateString({ strict: true })
+  birthdate!: string;
 }

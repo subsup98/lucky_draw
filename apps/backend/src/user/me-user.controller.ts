@@ -1,10 +1,11 @@
-import { Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, NotFoundException, Post, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { AuthUser } from '../auth/jwt-auth.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { extractAuditCtx } from '../audit-log/audit-context';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from './user.service';
 
 /**
@@ -18,7 +19,26 @@ export class MeUserController {
   constructor(
     private readonly users: UserService,
     private readonly audit: AuditLogService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /** 현재 로그인한 사용자 프로필. */
+  @Get()
+  async me(@CurrentUser() user: AuthUser) {
+    const u = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        emailVerified: true,
+        birthdate: true,
+        createdAt: true,
+      },
+    });
+    if (!u) throw new NotFoundException('user not found');
+    return u;
+  }
 
   @Post('withdraw')
   @HttpCode(200)

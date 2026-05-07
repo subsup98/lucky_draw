@@ -106,6 +106,8 @@ model User {
   phone         String?
   status        UserStatus @default(ACTIVE)
   emailVerified Boolean    @default(false)
+  // 만 14세 이상 검증용. 가입 시점에만 검증, 이후 마케팅·통계용으로 사용 안 함.
+  birthdate     DateTime?  @db.Date
   tokenVersion  Int        @default(0)
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())

@@ -15,6 +15,11 @@ import { AuthService, AuthTokens } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { SignupDto } from './dto/signup.dto';
+import {
+  RequestPasswordResetDto,
+  ResetPasswordDto,
+  VerifySignupCodeDto,
+} from './dto/email-verification.dto';
 
 const REFRESH_COOKIE = 'lucky_rt';
 const CLIENT_HEADER = 'x-client';
@@ -43,6 +48,60 @@ export class AuthController {
   async signup(@Body() dto: SignupDto) {
     const { userId } = await this.auth.signup(dto);
     return { userId };
+  }
+
+  /**
+   * 가입 1단계: 이메일 인증 코드 요청.
+   * 비번 + 가입 정보를 Redis 에 5분 보관, 이메일로 6자리 코드 발송.
+   */
+  @Post('email/request-code')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({ key: 'auth:email-code', limit: 5, windowSec: 600, bodyKeyField: 'email' })
+  async requestSignupCode(@Body() dto: SignupDto) {
+    await this.auth.requestSignupCode(dto);
+    return { ok: true };
+  }
+
+  /**
+   * 가입 2단계: 코드 검증 → 사용자 생성 + 자동 로그인 토큰 발급.
+   */
+  @Post('email/verify')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({ key: 'auth:email-verify', limit: 10, windowSec: 600, bodyKeyField: 'email' })
+  async verifySignupCode(
+    @Body() dto: VerifySignupCodeDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.auth.verifySignupCode(dto);
+    if (isMobileClient(req)) {
+      return this.mobileTokenBody(result, { userId: result.userId });
+    }
+    this.setRefreshCookie(res, result);
+    return { userId: result.userId, accessToken: result.accessToken };
+  }
+
+  /**
+   * 비밀번호 재설정 1단계: 이메일로 코드 발송.
+   * 사용자 존재 여부는 응답에 노출하지 않음.
+   */
+  @Post('password/request-code')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({ key: 'auth:pwreset-code', limit: 5, windowSec: 600, bodyKeyField: 'email' })
+  async requestPasswordResetCode(@Body() dto: RequestPasswordResetDto) {
+    await this.auth.requestPasswordResetCode(dto);
+    return { ok: true };
+  }
+
+  /**
+   * 비밀번호 재설정 2단계: 코드 + 새 비밀번호 검증 → 비번 변경 + 모든 세션 폐기.
+   */
+  @Post('password/reset')
+  @HttpCode(HttpStatus.OK)
+  @RateLimit({ key: 'auth:pwreset', limit: 10, windowSec: 600, bodyKeyField: 'email' })
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.auth.resetPassword(dto);
+    return { ok: true };
   }
 
   @Post('login')
