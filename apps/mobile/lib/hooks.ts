@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { useAuthStore } from "./auth-store";
 
@@ -195,5 +195,132 @@ export function useKujiDetail(id: string | undefined) {
     queryKey: ["kuji", id],
     queryFn: () => api<KujiDetail>(`/api/kujis/${id}`),
     enabled: !!id,
+  });
+}
+
+// ─── 주문 ────────────────────────────────────────────────────────────
+
+export interface OrderListItem {
+  id: string;
+  kujiEventId: string;
+  ticketCount: number;
+  unitPrice: number;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+  paidAt: string | null;
+  drawnAt: string | null;
+  cancelledAt: string | null;
+}
+
+export function useOrders() {
+  const authed = useAuthStore((s) => s.authed);
+  return useQuery({
+    queryKey: ["orders"],
+    queryFn: () => api<OrderListItem[]>("/api/orders"),
+    enabled: authed,
+  });
+}
+
+export function useOrder(id: string | undefined) {
+  return useQuery({
+    queryKey: ["order", id],
+    queryFn: () => api<OrderListItem>(`/api/orders/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCancelOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      api<{ ok: boolean }>(`/api/orders/${id}/cancel`, { method: "POST" }),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order", id] });
+    },
+  });
+}
+
+// ─── 배송 ────────────────────────────────────────────────────────────
+
+export interface ShipmentListItem {
+  id: string;
+  orderId: string;
+  status: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+}
+
+export function useShipments() {
+  const authed = useAuthStore((s) => s.authed);
+  return useQuery({
+    queryKey: ["shipments"],
+    queryFn: () => api<ShipmentListItem[]>("/api/me/shipments"),
+    enabled: authed,
+  });
+}
+
+export function useShipment(id: string | undefined) {
+  return useQuery({
+    queryKey: ["shipment", id],
+    queryFn: () => api<ShipmentListItem & Record<string, unknown>>(`/api/shipments/${id}`),
+    enabled: !!id,
+  });
+}
+
+// ─── 문의 ────────────────────────────────────────────────────────────
+
+export interface InquiryListItem {
+  id: string;
+  category: string;
+  subject: string;
+  status: string;
+  answeredAt: string | null;
+  createdAt: string;
+  orderId: string | null;
+}
+
+export interface InquiryDetail extends InquiryListItem {
+  body: string;
+  answer: string | null;
+}
+
+export function useInquiries() {
+  const authed = useAuthStore((s) => s.authed);
+  return useQuery({
+    queryKey: ["inquiries"],
+    queryFn: () => api<InquiryListItem[]>("/api/me/inquiries"),
+    enabled: authed,
+  });
+}
+
+export function useInquiry(id: string | undefined) {
+  return useQuery({
+    queryKey: ["inquiry", id],
+    queryFn: () => api<InquiryDetail>(`/api/me/inquiries/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useCreateInquiry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: {
+      category: string;
+      subject: string;
+      body: string;
+      orderId?: string;
+    }) =>
+      api<InquiryDetail>("/api/inquiries", {
+        method: "POST",
+        body: JSON.stringify(vars),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["inquiries"] });
+    },
   });
 }
