@@ -75,6 +75,47 @@ export function useRequestPasswordResetCode() {
   });
 }
 
+// ─── 소셜 로그인 ─────────────────────────────────────────────────────
+
+import * as WebBrowser from "expo-web-browser";
+import { OAUTH_BASE_URL } from "./env";
+
+WebBrowser.maybeCompleteAuthSession();
+
+const DEEP_LINK_RETURN = "luckydraw://oauth/done";
+
+/**
+ * 카카오 로그인 — 백엔드의 /api/auth/oauth/kakao/start 로 진입,
+ * 콜백 후 deep link 로 토큰 받아 setAuth.
+ */
+export function useKakaoLogin() {
+  const setAuth = useAuthStore((s) => s.setAuth);
+  return useMutation({
+    mutationFn: async () => {
+      const startUrl = `${OAUTH_BASE_URL}/api/auth/oauth/kakao/start`;
+      const result = await WebBrowser.openAuthSessionAsync(
+        startUrl,
+        DEEP_LINK_RETURN,
+      );
+      if (result.type !== "success" || !result.url) {
+        throw new Error(result.type === "cancel" ? "취소됨" : "로그인 실패");
+      }
+      // result.url 예: luckydraw://oauth/done?accessToken=...&refreshToken=...
+      const queryStart = result.url.indexOf("?");
+      const params = new URLSearchParams(
+        queryStart >= 0 ? result.url.slice(queryStart + 1) : "",
+      );
+      const error = params.get("error");
+      if (error) throw new Error(error);
+      const accessToken = params.get("accessToken");
+      const refreshToken = params.get("refreshToken");
+      if (!accessToken || !refreshToken) throw new Error("토큰 누락");
+      await setAuth({ accessToken, refreshToken });
+      return { ok: true };
+    },
+  });
+}
+
 export function useResetPassword() {
   return useMutation({
     mutationFn: async (vars: {

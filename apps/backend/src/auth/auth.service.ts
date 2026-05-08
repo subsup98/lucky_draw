@@ -133,6 +133,22 @@ export class AuthService {
     await this.redis.del(this.refreshKey(parsed.userId, parsed.tokenId));
   }
 
+  /**
+   * 소셜 로그인용 — userId 만으로 세션 발급.
+   * (login() 의 password 검증 단계만 건너뛴 동일 흐름.)
+   */
+  async loginByUserId(userId: string): Promise<AuthTokens & { userId: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('user not found');
+    if (user.status !== 'ACTIVE') throw new UnauthorizedException('user inactive');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+    const tokens = await this.issueTokens(user.id, user.tokenVersion);
+    return { userId: user.id, ...tokens };
+  }
+
   private async issueTokens(userId: string, tokenVersion: number): Promise<AuthTokens> {
     const accessToken = await this.jwt.signAsync({
       sub: userId,

@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { OAuthController } from './oauth.controller';
+import { OAuthService } from './oauth.service';
 import { EmailModule } from '../email/email.module';
 
 @Module({
@@ -14,8 +16,8 @@ import { EmailModule } from '../email/email.module';
       signOptions: { expiresIn: process.env.JWT_ACCESS_TTL ?? '15m' },
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
+  controllers: [AuthController, OAuthController],
+  providers: [AuthService, OAuthService, JwtAuthGuard],
   exports: [AuthService, JwtAuthGuard],
 })
 export class AuthModule {}

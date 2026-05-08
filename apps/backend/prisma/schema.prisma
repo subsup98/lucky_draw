@@ -108,6 +108,10 @@ model User {
   emailVerified Boolean    @default(false)
   // 만 14세 이상 검증용. 가입 시점에만 검증, 이후 마케팅·통계용으로 사용 안 함.
   birthdate     DateTime?  @db.Date
+  // 소셜 로그인 provider 식별자. 같은 이메일 사용자 매칭 시 자동 연결.
+  kakaoId       String?    @unique
+  naverId       String?    @unique
+  googleId      String?    @unique
   tokenVersion  Int        @default(0)
   lastLoginAt   DateTime?
   createdAt     DateTime   @default(now())

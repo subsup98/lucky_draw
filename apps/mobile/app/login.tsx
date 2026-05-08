@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useLogin, useRequestSignupCode } from "../lib/hooks";
+import { useLogin, useRequestSignupCode, useKakaoLogin } from "../lib/hooks";
 import { apiErrorToKo } from "../lib/error-message";
 
 const passwordSchema = z
@@ -83,7 +83,18 @@ export default function LoginScreen() {
 
   const login = useLogin();
   const requestCode = useRequestSignupCode();
-  const busy = login.isPending || requestCode.isPending;
+  const kakao = useKakaoLogin();
+  const busy = login.isPending || requestCode.isPending || kakao.isPending;
+
+  const onKakao = async () => {
+    setServerError(null);
+    try {
+      await kakao.mutateAsync();
+      router.replace("/" as never);
+    } catch (e) {
+      setServerError(e instanceof Error ? e.message : "카카오 로그인 실패");
+    }
+  };
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
@@ -126,6 +137,30 @@ export default function LoginScreen() {
         className="flex-1"
       >
         <View className="flex-1 px-6 pt-6">
+          {mode === "login" && (
+            <View className="mb-4">
+              <Pressable
+                onPress={onKakao}
+                disabled={busy}
+                className="rounded-md py-3 items-center active:opacity-70 disabled:opacity-50"
+                style={{ backgroundColor: "#FEE500" }}
+              >
+                {kakao.isPending ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text className="text-sm font-semibold" style={{ color: "#191919" }}>
+                    카카오로 시작하기
+                  </Text>
+                )}
+              </Pressable>
+              <View className="flex-row items-center my-4">
+                <View className="flex-1 h-px bg-gray-200" />
+                <Text className="text-xs text-gray-400 mx-3">또는 이메일로</Text>
+                <View className="flex-1 h-px bg-gray-200" />
+              </View>
+            </View>
+          )}
+
           {mode === "signup" && (
             <>
               <View className="mb-4">
