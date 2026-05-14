@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Alert, Button, Card, Form, Input, Space, Tabs, Typography } from "antd";
 import { api, ApiError } from "../lib/api";
@@ -103,7 +104,15 @@ export default function AdminLoginPage() {
 
   return (
     <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f5f5f5" }}>
-      <Card style={{ width: 420 }} title="관리자 로그인">
+      <Card
+        style={{ width: 420 }}
+        title="관리자 로그인"
+        extra={
+          <Link href="/privacy" style={{ fontSize: 12 }}>
+            개인정보처리방침
+          </Link>
+        }
+      >
         {error && <Alert type="error" message={error} style={{ marginBottom: 16 }} />}
 
         {stage === "login" && (

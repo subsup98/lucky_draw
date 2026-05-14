@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, ApiError } from "../lib/api";
 
@@ -82,6 +83,20 @@ export default function LoginPage() {
       >
         {mode === "login" ? "회원가입으로" : "로그인으로"}
       </button>
+      {mode === "signup" && (
+        <p className="mt-4 text-xs text-gray-500">
+          회원가입 시{" "}
+          <Link href="/privacy" className="underline">
+            개인정보처리방침
+          </Link>
+          에 동의하는 것으로 간주됩니다.
+        </p>
+      )}
+      <footer className="mt-8 text-center text-xs text-gray-500">
+        <Link href="/privacy" className="underline">
+          개인정보처리방침
+        </Link>
+      </footer>
     </main>
   );
 }

@@ -62,6 +62,12 @@ export default function HomePage() {
       </div>
 
       <PopupBanner />
+
+      <footer className="mt-12 border-t pt-4 text-center text-xs text-gray-500">
+        <Link href="/privacy" className="underline">
+          개인정보처리방침
+        </Link>
+      </footer>
     </main>
   );
 }
