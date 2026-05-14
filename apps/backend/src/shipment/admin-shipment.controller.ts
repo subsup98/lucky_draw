@@ -17,8 +17,17 @@ import { AdminJwtAuthGuard, AdminAuthContext } from '../admin-auth/admin-jwt-aut
 import { CurrentAdmin } from '../admin-auth/current-admin.decorator';
 import { extractAuditCtx } from '../audit-log/audit-context';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { FieldCipherService } from '../crypto/field-cipher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateShipmentDto } from './dto/admin-shipment.dto';
+
+type EncryptedShipmentFields = {
+  recipient: string;
+  phone: string;
+  postalCode: string;
+  addressLine1: string;
+  addressLine2: string | null;
+};
 
 /**
  * 허용 전이 그래프.
@@ -46,7 +55,23 @@ export class AdminShipmentController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
+    private readonly cipher: FieldCipherService,
   ) {}
+
+  private decryptShipment<T extends EncryptedShipmentFields>(s: T): T {
+    return {
+      ...s,
+      recipient: this.cipher.decrypt(s.recipient, FieldCipherService.aad('Shipment', 'recipient')) ?? s.recipient,
+      phone: this.cipher.decrypt(s.phone, FieldCipherService.aad('Shipment', 'phone')) ?? s.phone,
+      postalCode:
+        this.cipher.decrypt(s.postalCode, FieldCipherService.aad('Shipment', 'postalCode')) ?? s.postalCode,
+      addressLine1:
+        this.cipher.decrypt(s.addressLine1, FieldCipherService.aad('Shipment', 'addressLine1')) ?? s.addressLine1,
+      addressLine2: s.addressLine2
+        ? this.cipher.decrypt(s.addressLine2, FieldCipherService.aad('Shipment', 'addressLine2'))
+        : s.addressLine2,
+    };
+  }
 
   @Get()
   async list(
@@ -85,7 +110,7 @@ export class AdminShipmentController {
     const hasNext = rows.length > limit;
     const items = hasNext ? rows.slice(0, limit) : rows;
     return {
-      items,
+      items: items.map((r) => this.decryptShipment(r)),
       nextCursor: hasNext ? items[items.length - 1]?.id ?? null : null,
       limit,
     };
@@ -105,7 +130,20 @@ export class AdminShipmentController {
       },
     });
     if (!shipment) throw new NotFoundException('shipment not found');
-    return shipment;
+    const decrypted = this.decryptShipment(shipment);
+    return {
+      ...decrypted,
+      order: {
+        ...decrypted.order,
+        user: {
+          ...decrypted.order.user,
+          phone: this.cipher.decrypt(
+            decrypted.order.user.phone,
+            FieldCipherService.aad('User', 'phone'),
+          ),
+        },
+      },
+    };
   }
 
   @Patch(':id')

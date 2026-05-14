@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AuditLogService, type AuditContext } from '../audit-log/audit-log.service';
+import { FieldCipherService } from '../crypto/field-cipher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { StockService } from '../stock/stock.service';
@@ -31,6 +32,7 @@ export class OrderService {
     private readonly redis: RedisService,
     private readonly audit: AuditLogService,
     private readonly stock: StockService,
+    private readonly cipher: FieldCipherService,
   ) {}
 
   async create(
@@ -208,10 +210,13 @@ export class OrderService {
             totalAmount,
             status: 'PENDING_PAYMENT',
             idempotencyKey,
-            shippingSnapshot: {
-              ...dto.shippingAddress,
-              capturedAt: now.toISOString(),
-            } as Prisma.JsonObject,
+            shippingSnapshot: this.cipher.encryptJson(
+              {
+                ...dto.shippingAddress,
+                capturedAt: now.toISOString(),
+              },
+              FieldCipherService.aad('Order', 'shippingSnapshot'),
+            ) as unknown as Prisma.JsonObject,
           },
           select: this.orderSelect(),
         });
@@ -353,7 +358,10 @@ export class OrderService {
       unitPrice: o.unitPrice,
       totalAmount: o.totalAmount,
       status: o.status,
-      shippingSnapshot: o.shippingSnapshot,
+      shippingSnapshot: this.cipher.decryptJson(
+        o.shippingSnapshot,
+        FieldCipherService.aad('Order', 'shippingSnapshot'),
+      ),
       createdAt: o.createdAt,
       paidAt: o.paidAt,
       drawnAt: o.drawnAt,

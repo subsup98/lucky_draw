@@ -16,6 +16,7 @@ import { CurrentAdmin } from '../admin-auth/current-admin.decorator';
 import type { AdminAuthContext } from '../admin-auth/admin-jwt-auth.guard';
 import { AdminJwtAuthGuard } from '../admin-auth/admin-jwt-auth.guard';
 import { extractAuditCtx } from '../audit-log/audit-context';
+import { FieldCipherService } from '../crypto/field-cipher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RefundOrderDto } from './dto/refund.dto';
 import { PaymentService } from './payment.service';
@@ -41,6 +42,7 @@ export class AdminOrderController {
   constructor(
     private readonly payments: PaymentService,
     private readonly prisma: PrismaService,
+    private readonly cipher: FieldCipherService,
   ) {}
 
   @Get()
@@ -120,7 +122,33 @@ export class AdminOrderController {
       },
     });
     if (!order) throw new NotFoundException('order not found');
-    return order;
+    return {
+      ...order,
+      user: {
+        ...order.user,
+        phone: this.cipher.decrypt(order.user.phone, FieldCipherService.aad('User', 'phone')),
+      },
+      shipment: order.shipment
+        ? {
+            ...order.shipment,
+            recipient:
+              this.cipher.decrypt(order.shipment.recipient, FieldCipherService.aad('Shipment', 'recipient')) ??
+              order.shipment.recipient,
+            phone:
+              this.cipher.decrypt(order.shipment.phone, FieldCipherService.aad('Shipment', 'phone')) ??
+              order.shipment.phone,
+            postalCode:
+              this.cipher.decrypt(order.shipment.postalCode, FieldCipherService.aad('Shipment', 'postalCode')) ??
+              order.shipment.postalCode,
+            addressLine1:
+              this.cipher.decrypt(order.shipment.addressLine1, FieldCipherService.aad('Shipment', 'addressLine1')) ??
+              order.shipment.addressLine1,
+            addressLine2: order.shipment.addressLine2
+              ? this.cipher.decrypt(order.shipment.addressLine2, FieldCipherService.aad('Shipment', 'addressLine2'))
+              : order.shipment.addressLine2,
+          }
+        : order.shipment,
+    };
   }
 
   @Post(':orderId/refund')

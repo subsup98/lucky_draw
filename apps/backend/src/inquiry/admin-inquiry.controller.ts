@@ -15,6 +15,7 @@ import { AdminAuthContext, AdminJwtAuthGuard } from '../admin-auth/admin-jwt-aut
 import { CurrentAdmin } from '../admin-auth/current-admin.decorator';
 import { extractAuditCtx } from '../audit-log/audit-context';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { FieldCipherService } from '../crypto/field-cipher.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { AnswerInquiryDto, UpdateInquiryStatusDto } from './dto/inquiry.dto';
 
@@ -24,6 +25,7 @@ export class AdminInquiryController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
+    private readonly cipher: FieldCipherService,
   ) {}
 
   @Get()
@@ -80,7 +82,13 @@ export class AdminInquiryController {
       },
     });
     if (!inq) throw new NotFoundException('inquiry not found');
-    return inq;
+    return {
+      ...inq,
+      user: {
+        ...inq.user,
+        phone: this.cipher.decrypt(inq.user.phone, FieldCipherService.aad('User', 'phone')),
+      },
+    };
   }
 
   @Patch(':id/answer')

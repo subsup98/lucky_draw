@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { FieldCipherService } from '../crypto/field-cipher.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface ShippingSnapshot {
@@ -17,10 +18,15 @@ interface ShippingSnapshot {
 
 @Injectable()
 export class ShipmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cipher: FieldCipherService,
+  ) {}
 
   /**
    * Draw 트랜잭션 내부에서 호출. Order.shippingSnapshot 을 Shipment 본체 필드로 복사.
+   * 입력 snapshot 은 암호화된(`{enc:...}`) 또는 평문(백필 전) 모두 허용.
+   * Shipment 컬럼 (recipient/phone/postalCode/addressLine1/addressLine2) 은 모두 암호화 후 저장.
    * `orderId` UNIQUE 덕에 중복 호출은 P2002 로 차단되므로 호출자는 draw 멱등 경로에서만 스킵하면 된다.
    */
   async createForOrderInTx(
@@ -28,16 +34,22 @@ export class ShipmentService {
     orderId: string,
     snapshot: unknown,
   ) {
-    const snap = this.parseSnapshot(snapshot);
+    const decrypted = this.cipher.decryptJson<ShippingSnapshot>(
+      snapshot,
+      FieldCipherService.aad('Order', 'shippingSnapshot'),
+    );
+    const snap = this.parseSnapshot(decrypted);
     if (!snap) return null;
     return tx.shipment.create({
       data: {
         orderId,
-        recipient: snap.recipient,
-        phone: snap.phone,
-        postalCode: snap.postalCode,
-        addressLine1: snap.addressLine1,
-        addressLine2: snap.addressLine2 ?? null,
+        recipient: this.cipher.encrypt(snap.recipient, FieldCipherService.aad('Shipment', 'recipient'))!,
+        phone: this.cipher.encrypt(snap.phone, FieldCipherService.aad('Shipment', 'phone'))!,
+        postalCode: this.cipher.encrypt(snap.postalCode, FieldCipherService.aad('Shipment', 'postalCode'))!,
+        addressLine1: this.cipher.encrypt(snap.addressLine1, FieldCipherService.aad('Shipment', 'addressLine1'))!,
+        addressLine2: snap.addressLine2
+          ? this.cipher.encrypt(snap.addressLine2, FieldCipherService.aad('Shipment', 'addressLine2'))
+          : null,
       },
       select: this.shipmentSelect(),
     });
@@ -109,6 +121,16 @@ export class ShipmentService {
       select: ReturnType<ShipmentService['shipmentSelect']>;
     }>,
   ) {
-    return s;
+    return {
+      ...s,
+      recipient: this.cipher.decrypt(s.recipient, FieldCipherService.aad('Shipment', 'recipient')) ?? s.recipient,
+      phone: this.cipher.decrypt(s.phone, FieldCipherService.aad('Shipment', 'phone')) ?? s.phone,
+      postalCode: this.cipher.decrypt(s.postalCode, FieldCipherService.aad('Shipment', 'postalCode')) ?? s.postalCode,
+      addressLine1:
+        this.cipher.decrypt(s.addressLine1, FieldCipherService.aad('Shipment', 'addressLine1')) ?? s.addressLine1,
+      addressLine2: s.addressLine2
+        ? this.cipher.decrypt(s.addressLine2, FieldCipherService.aad('Shipment', 'addressLine2'))
+        : s.addressLine2,
+    };
   }
 }

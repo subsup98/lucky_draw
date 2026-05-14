@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
+import { FieldCipherService } from '../crypto/field-cipher.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -20,7 +21,10 @@ export class UserService {
   private readonly logger = new Logger(UserService.name);
   static readonly GRACE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cipher: FieldCipherService,
+  ) {}
 
   /** 사용자 자가 탈퇴 또는 관리자 강제 탈퇴 — 동일 동작. 멱등(이미 탈퇴면 그대로 반환). */
   async withdraw(userId: string): Promise<{ withdrawnAt: Date }> {
@@ -141,14 +145,17 @@ export class UserService {
     const hasNext = rows.length > params.limit;
     const items = hasNext ? rows.slice(0, params.limit) : rows;
     return {
-      items,
+      items: items.map((u) => ({
+        ...u,
+        phone: this.cipher.decrypt(u.phone, FieldCipherService.aad('User', 'phone')),
+      })),
       nextCursor: hasNext ? items[items.length - 1]?.id ?? null : null,
       limit: params.limit,
     };
   }
 
   async findDetail(userId: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
         _count: { select: { orders: true, drawResults: true, inquiries: true } },
@@ -166,5 +173,10 @@ export class UserService {
         },
       },
     });
+    if (!user) return null;
+    return {
+      ...user,
+      phone: this.cipher.decrypt(user.phone, FieldCipherService.aad('User', 'phone')),
+    };
   }
 }

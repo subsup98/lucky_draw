@@ -5,6 +5,7 @@ import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuthModule } from './auth/auth.module';
 import { BannerModule } from './banner/banner.module';
+import { CryptoModule } from './crypto/crypto.module';
 import { DrawModule } from './draw/draw.module';
 import { HealthController } from './health.controller';
 import { InquiryModule } from './inquiry/inquiry.module';
@@ -27,6 +28,7 @@ import { StockModule } from './stock/stock.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
+    CryptoModule,
     RateLimitModule,
     AuditLogModule,
     StockModule,
