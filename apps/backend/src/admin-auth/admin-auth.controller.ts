@@ -99,7 +99,8 @@ export class AdminAuthController {
   private cookieOptions(): CookieOptions {
     return {
       httpOnly: true,
-      secure: process.env.COOKIE_SECURE === 'true',
+      // prod 에서는 COOKIE_SECURE 값과 무관하게 항상 secure 강제 — 평문 쿠키 사고 방지.
+      secure: process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true',
       sameSite: 'lax',
       path: '/api/admin',
     };

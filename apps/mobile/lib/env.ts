@@ -17,3 +17,19 @@ export const API_BASE_URL =
  */
 export const OAUTH_BASE_URL =
   process.env.EXPO_PUBLIC_OAUTH_BASE_URL ?? API_BASE_URL;
+
+/**
+ * 백엔드가 상대 경로(`/uploads/xxx.jpg`)로 내려준 이미지 URL 을 절대 URL 로 변환.
+ * `https://` 는 그대로 통과. `http://` 는 dev 빌드(`__DEV__`)에서만 허용 — prod 에서는 null
+ * (MITM 변조/iOS ATS 차단 회피 방지).
+ * null/undefined/빈 문자열 → null (호출부에서 placeholder 처리).
+ */
+export function resolveImageUrl(
+  url: string | null | undefined,
+): string | null {
+  if (!url) return null;
+  if (url.startsWith("https://")) return url;
+  if (url.startsWith("http://")) return __DEV__ ? url : null;
+  if (url.startsWith("/")) return `${API_BASE_URL}${url}`;
+  return `${API_BASE_URL}/${url}`;
+}

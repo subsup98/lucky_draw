@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useBanners, useKujis } from "../lib/hooks";
 import { useAuthStore } from "../lib/auth-store";
 import { apiErrorToKo } from "../lib/error-message";
+import { resolveImageUrl } from "../lib/env";
 
 export default function HomeScreen() {
   const authed = useAuthStore((s) => s.authed);
@@ -64,14 +65,17 @@ export default function HomeScreen() {
         renderItem={({ item }) => (
           <Link href={{ pathname: "/kujis/[id]", params: { id: item.id } } as never} asChild>
             <Pressable className="px-4 py-3 border-b border-gray-100 active:bg-gray-50 flex-row items-center">
-              {item.coverImageUrl ? (
-                <Image
-                  source={{ uri: item.coverImageUrl }}
-                  className="w-16 h-16 rounded-md bg-gray-100 mr-3"
-                />
-              ) : (
-                <View className="w-16 h-16 rounded-md bg-gray-100 mr-3" />
-              )}
+              {(() => {
+                const src = resolveImageUrl(item.coverImageUrl);
+                return src ? (
+                  <Image
+                    source={{ uri: src }}
+                    className="w-16 h-16 rounded-md bg-gray-100 mr-3"
+                  />
+                ) : (
+                  <View className="w-16 h-16 rounded-md bg-gray-100 mr-3" />
+                );
+              })()}
               <View className="flex-1">
                 <Text className="text-sm font-medium" numberOfLines={1}>
                   {item.title}

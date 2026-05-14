@@ -163,7 +163,8 @@ export class AuthController {
   private setRefreshCookie(res: Response, tokens: AuthTokens) {
     res.cookie(REFRESH_COOKIE, tokens.refreshToken, {
       httpOnly: true,
-      secure: process.env.COOKIE_SECURE === 'true',
+      // prod 에서는 COOKIE_SECURE 값과 무관하게 항상 secure 강제 — 평문 쿠키 사고 방지.
+      secure: process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true',
       sameSite: 'lax',
       path: '/',
       expires: tokens.refreshExpiresAt,

@@ -9,6 +9,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useKujiDetail } from "../../lib/hooks";
 import { apiErrorToKo } from "../../lib/error-message";
+import { resolveImageUrl } from "../../lib/env";
 
 export default function KujiDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,15 +44,18 @@ export default function KujiDetailScreen() {
         options={{ headerShown: true, title: k.title, headerBackTitle: "뒤로" }}
       />
       <ScrollView className="flex-1">
-        {k.coverImageUrl ? (
-          <Image
-            source={{ uri: k.coverImageUrl }}
-            className="w-full h-56 bg-gray-100"
-            resizeMode="cover"
-          />
-        ) : (
-          <View className="w-full h-56 bg-gray-100" />
-        )}
+        {(() => {
+          const src = resolveImageUrl(k.coverImageUrl);
+          return src ? (
+            <Image
+              source={{ uri: src }}
+              className="w-full h-56 bg-gray-100"
+              resizeMode="cover"
+            />
+          ) : (
+            <View className="w-full h-56 bg-gray-100" />
+          );
+        })()}
 
         <View className="px-6 py-5">
           <Text className="text-xl font-bold mb-1">{k.title}</Text>
