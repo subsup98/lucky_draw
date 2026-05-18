@@ -1,4 +1,4 @@
-# 3개 cloudflared 임시 터널을 한 번에 띄우고 URL 을 출력한다.
+﻿# 3개 cloudflared 임시 터널을 한 번에 띄우고 URL 을 출력한다.
 # 전제: dev 서버 (backend/user/admin) 가 이미 떠 있어야 함.
 # 사용: pwsh scripts/demo-tunnels.ps1
 # 종료: Ctrl+C — 모든 터널 자동 종료.
