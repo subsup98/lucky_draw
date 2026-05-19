@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AddressModule } from './address/address.module';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuthModule } from './auth/auth.module';
@@ -47,6 +48,7 @@ import { TicketModule } from './ticket/ticket.module';
     UploadModule,
     UserModule,
     TicketModule,
+    AddressModule,
   ],
   controllers: [HealthController],
 })

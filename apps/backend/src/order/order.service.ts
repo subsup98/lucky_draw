@@ -35,6 +35,87 @@ export class OrderService {
     private readonly cipher: FieldCipherService,
   ) {}
 
+  /**
+   * dto 에 담긴 addressId / shippingAddress / saveAddress 를 풀어
+   * 최종 평문 배송지 객체를 돌려준다. addressId 가 있으면 그 주소를 로드(소유 검증)하고
+   * 인라인이 있으면 saveAddress=true 일 때 Address 행도 함께 생성.
+   */
+  private async resolveShipping(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    dto: CreateOrderDto,
+  ): Promise<{
+    recipient: string;
+    phone: string;
+    postalCode: string;
+    addressLine1: string;
+    addressLine2?: string | null;
+  }> {
+    if (dto.addressId) {
+      const addr = await tx.address.findUnique({ where: { id: dto.addressId } });
+      if (!addr) throw new NotFoundException('address not found');
+      if (addr.userId !== userId) throw new ForbiddenException();
+      const aad = (col: string) => FieldCipherService.aad('Address', col);
+      return {
+        recipient: this.cipher.decrypt(addr.recipient, aad('recipient')) ?? addr.recipient,
+        phone: this.cipher.decrypt(addr.phone, aad('phone')) ?? addr.phone,
+        postalCode:
+          this.cipher.decrypt(addr.postalCode, aad('postalCode')) ?? addr.postalCode,
+        addressLine1:
+          this.cipher.decrypt(addr.addressLine1, aad('addressLine1')) ?? addr.addressLine1,
+        addressLine2: addr.addressLine2
+          ? this.cipher.decrypt(addr.addressLine2, aad('addressLine2'))
+          : null,
+      };
+    }
+    if (!dto.shippingAddress) {
+      throw new BadRequestException('addressId 또는 shippingAddress 필요');
+    }
+    if (dto.saveAddress) {
+      const aad = (col: string) => FieldCipherService.aad('Address', col);
+      const count = await tx.address.count({ where: { userId } });
+      if (count === 0) {
+        // 첫 주소는 자동 디폴트
+        await tx.address.create({
+          data: {
+            userId,
+            recipient: this.cipher.encrypt(dto.shippingAddress.recipient, aad('recipient'))!,
+            phone: this.cipher.encrypt(dto.shippingAddress.phone, aad('phone'))!,
+            postalCode: this.cipher.encrypt(dto.shippingAddress.postalCode, aad('postalCode'))!,
+            addressLine1:
+              this.cipher.encrypt(dto.shippingAddress.addressLine1, aad('addressLine1'))!,
+            addressLine2: dto.shippingAddress.addressLine2
+              ? this.cipher.encrypt(dto.shippingAddress.addressLine2, aad('addressLine2'))
+              : null,
+            isDefault: true,
+          },
+        });
+      } else {
+        await tx.address.create({
+          data: {
+            userId,
+            recipient: this.cipher.encrypt(dto.shippingAddress.recipient, aad('recipient'))!,
+            phone: this.cipher.encrypt(dto.shippingAddress.phone, aad('phone'))!,
+            postalCode: this.cipher.encrypt(dto.shippingAddress.postalCode, aad('postalCode'))!,
+            addressLine1:
+              this.cipher.encrypt(dto.shippingAddress.addressLine1, aad('addressLine1'))!,
+            addressLine2: dto.shippingAddress.addressLine2
+              ? this.cipher.encrypt(dto.shippingAddress.addressLine2, aad('addressLine2'))
+              : null,
+            isDefault: false,
+          },
+        });
+      }
+    }
+    return {
+      recipient: dto.shippingAddress.recipient,
+      phone: dto.shippingAddress.phone,
+      postalCode: dto.shippingAddress.postalCode,
+      addressLine1: dto.shippingAddress.addressLine1,
+      addressLine2: dto.shippingAddress.addressLine2 ?? null,
+    };
+  }
+
   async create(
     userId: string,
     dto: CreateOrderDto,
@@ -147,6 +228,7 @@ export class OrderService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        const shipping = await this.resolveShipping(tx, userId, dto);
         // 1) 이벤트 상태 검증 + soldTickets 원자적 증가.
         //    affected rows == 0 이면 재고 부족 / 판매중 아님 / 판매 기간 밖.
         const updated = await tx.$executeRaw<number>`
@@ -222,7 +304,7 @@ export class OrderService {
             idempotencyKey,
             shippingSnapshot: this.cipher.encryptJson(
               {
-                ...dto.shippingAddress,
+                ...shipping,
                 capturedAt: now.toISOString(),
               },
               FieldCipherService.aad('Order', 'shippingSnapshot'),
@@ -274,6 +356,7 @@ export class OrderService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        const shipping = await this.resolveShipping(tx, userId, dto);
         // 1) 대상 ticket 락 + 검증
         const tickets = await tx.$queryRaw<
           Array<{
@@ -379,7 +462,7 @@ export class OrderService {
             idempotencyKey,
             shippingSnapshot: this.cipher.encryptJson(
               {
-                ...dto.shippingAddress,
+                ...shipping,
                 capturedAt: now.toISOString(),
               },
               FieldCipherService.aad('Order', 'shippingSnapshot'),

@@ -59,7 +59,21 @@ export class CreateOrderDto {
   @MaxLength(40, { each: true })
   ticketIds?: string[];
 
+  /**
+   * 저장된 Address 사용 시 그 id. 인라인 shippingAddress 가 함께 오면 addressId 우선.
+   * 둘 다 없으면 BadRequest.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  addressId?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => ShippingAddressDto)
-  shippingAddress!: ShippingAddressDto;
+  shippingAddress?: ShippingAddressDto;
+
+  /** 인라인 shippingAddress 로 결제 시 Address 로 저장. */
+  @IsOptional()
+  saveAddress?: boolean;
 }

@@ -54,6 +54,21 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
   const [addressLine2, setAddressLine2] = useState("");
   const [agreeNoRefund, setAgreeNoRefund] = useState(false);
 
+  // 주소 (Address) 상태
+  type SavedAddress = {
+    id: string;
+    recipient: string;
+    phone: string;
+    postalCode: string;
+    addressLine1: string;
+    addressLine2: string | null;
+    isDefault: boolean;
+  };
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[] | null>(null);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [useNewAddress, setUseNewAddress] = useState(false);
+  const [saveNewAddress, setSaveNewAddress] = useState(true);
+
   // 자리(Ticket) 기반 상태
   const [tickets, setTickets] = useState<TicketCell[] | null>(null);
   const [ticketsErr, setTicketsErr] = useState<string | null>(null);
@@ -85,6 +100,17 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
     const id = setInterval(loadTickets, 10000);
     return () => clearInterval(id);
   }, [loadTickets]);
+
+  // 저장된 배송지 로드 (로그인 안 했으면 401, 조용히 무시)
+  useEffect(() => {
+    api<SavedAddress[]>("/api/me/addresses")
+      .then((rows) => {
+        setSavedAddresses(rows);
+        const def = rows.find((r) => r.isDefault) ?? rows[0];
+        if (def) setSelectedAddressId(def.id);
+      })
+      .catch(() => setSavedAddresses([]));
+  }, []);
 
   const toggle = useCallback((t: TicketCell) => {
     setSelectedIds((prev) =>
@@ -123,24 +149,23 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
       const key = sessionStorage.getItem(idempKey) ?? newIdempotencyKey();
       sessionStorage.setItem(idempKey, key);
 
+      // 주소: 저장된 거 선택했고 새 입력 모드 아니면 addressId, 아니면 인라인.
+      const usingSaved =
+        !useNewAddress && selectedAddressId && (savedAddresses?.length ?? 0) > 0;
+      const addressPart = usingSaved
+        ? { addressId: selectedAddressId }
+        : {
+            shippingAddress: {
+              recipient, phone, postalCode, addressLine1,
+              addressLine2: addressLine2 || undefined,
+            },
+            saveAddress: saveNewAddress,
+          };
+
       const orderPayload =
         ticketIds && ticketIds.length > 0
-          ? {
-              kujiEventId: kuji.id,
-              ticketIds,
-              shippingAddress: {
-                recipient, phone, postalCode, addressLine1,
-                addressLine2: addressLine2 || undefined,
-              },
-            }
-          : {
-              kujiEventId: kuji.id,
-              ticketCount: 1,
-              shippingAddress: {
-                recipient, phone, postalCode, addressLine1,
-                addressLine2: addressLine2 || undefined,
-              },
-            };
+          ? { kujiEventId: kuji.id, ticketIds, ...addressPart }
+          : { kujiEventId: kuji.id, ticketCount: 1, ...addressPart };
 
       const order = await api<OrderResponse>("/api/orders", {
         method: "POST",
@@ -398,13 +423,77 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
               <h3 className="font-bold flex items-center gap-2">
                 <Truck className="h-4 w-4 text-primary" /> 배송지
               </h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5"><Label htmlFor="recipient">받는 분</Label><Input id="recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)} required maxLength={60} /></div>
-                <div className="space-y-1.5"><Label htmlFor="phone">연락처</Label><Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={20} /></div>
-                <div className="space-y-1.5"><Label htmlFor="postalCode">우편번호</Label><Input id="postalCode" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} required maxLength={10} /></div>
-                <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="addressLine1">주소</Label><Input id="addressLine1" value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} required maxLength={200} /></div>
-                <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="addressLine2">상세주소 <span className="text-muted-foreground font-normal">(선택)</span></Label><Input id="addressLine2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} maxLength={200} /></div>
-              </div>
+
+              {(() => {
+                const hasSaved = (savedAddresses?.length ?? 0) > 0;
+                const showSaved = hasSaved && !useNewAddress;
+
+                if (showSaved) {
+                  const cur = savedAddresses!.find((a) => a.id === selectedAddressId);
+                  return (
+                    <div className="space-y-2">
+                      <select
+                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                        value={selectedAddressId ?? ""}
+                        onChange={(e) => setSelectedAddressId(e.target.value)}
+                      >
+                        {savedAddresses!.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.recipient} · {a.addressLine1}
+                            {a.isDefault ? " (기본)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {cur && (
+                        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
+                          <div className="font-semibold">{cur.recipient} · {cur.phone}</div>
+                          <div className="text-muted-foreground">
+                            [{cur.postalCode}] {cur.addressLine1}
+                            {cur.addressLine2 ? ` ${cur.addressLine2}` : ""}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setUseNewAddress(true)}
+                        className="text-xs text-primary underline"
+                      >
+                        + 새 주소로 결제
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5"><Label htmlFor="recipient">받는 분</Label><Input id="recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)} required maxLength={60} /></div>
+                      <div className="space-y-1.5"><Label htmlFor="phone">연락처</Label><Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={20} /></div>
+                      <div className="space-y-1.5"><Label htmlFor="postalCode">우편번호</Label><Input id="postalCode" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} required maxLength={10} /></div>
+                      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="addressLine1">주소</Label><Input id="addressLine1" value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} required maxLength={200} /></div>
+                      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="addressLine2">상세주소 <span className="text-muted-foreground font-normal">(선택)</span></Label><Input id="addressLine2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} maxLength={200} /></div>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveNewAddress}
+                        onChange={(e) => setSaveNewAddress(e.target.checked)}
+                        className="h-4 w-4 rounded border-input"
+                      />
+                      <span>다음 주문부터 자동 사용 (주소록에 저장)</span>
+                    </label>
+                    {hasSaved && (
+                      <button
+                        type="button"
+                        onClick={() => setUseNewAddress(false)}
+                        className="text-xs text-primary underline"
+                      >
+                        저장된 주소 사용하기
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="rounded-lg border border-[hsl(var(--kuji-gold))]/40 bg-[hsl(var(--kuji-gold))]/10 p-4">
                 <p className="font-bold flex items-center gap-2 text-sm">

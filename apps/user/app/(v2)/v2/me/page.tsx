@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Package, Truck, AlertTriangle, ChevronRight } from "lucide-react";
+import { Package, Truck, AlertTriangle, ChevronRight, MapPin } from "lucide-react";
 import { api, ApiError, setAccessToken } from "@/app/lib/api";
 import type { OrderResponse, ShipmentResponse } from "@/app/lib/types";
 import { V2Header } from "../../components/v2-header";
@@ -59,7 +59,13 @@ export default function MePageV2() {
       <V2Header back="/v2" backLabel="홈" />
 
       <h1 className="text-3xl font-black tracking-tight mb-1">마이페이지</h1>
-      <p className="text-sm text-muted-foreground mb-6">주문/배송 내역을 확인할 수 있어요.</p>
+      <p className="text-sm text-muted-foreground mb-4">주문/배송 내역을 확인할 수 있어요.</p>
+
+      <Button variant="outline" size="sm" asChild className="mb-6">
+        <Link href="/v2/me/addresses">
+          <MapPin className="h-4 w-4" /> 배송지 관리
+        </Link>
+      </Button>
 
       <div className="flex gap-1 mb-4 border-b">
         {(
