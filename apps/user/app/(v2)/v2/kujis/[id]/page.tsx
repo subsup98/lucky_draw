@@ -180,7 +180,6 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
                 className="absolute inset-0 opacity-30"
                 style={{ backgroundImage: "radial-gradient(circle at 30% 30%, hsl(var(--kuji-gold)) 0, transparent 50%)" }}
               />
-              <div className="absolute bottom-2 right-3 text-primary-foreground/40 font-black text-7xl leading-none select-none">籤</div>
             </>
           )}
           <div className="absolute top-3 left-3 flex gap-1.5">
@@ -211,37 +210,69 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
         </CardContent>
       </Card>
 
-      {/* Tiers */}
+      {/* Tiers — 등수별 카드. 각 카드 안에 모든 prizeItems 이미지 그리드. */}
       <Card className="mb-6">
         <CardContent className="p-6">
           <h2 className="font-bold flex items-center gap-2 mb-4">
             <Trophy className="h-5 w-5 text-[hsl(var(--kuji-gold))]" /> 경품 구성
           </h2>
-          <ul className="space-y-2">
+          <div className="space-y-4">
             {kuji.prizeTiers.map((t) => {
-              const prizeImage = t.prizeItems?.[0]?.imageUrl ?? null;
+              const remaining = t.inventory?.remainingQuantity ?? 0;
+              const total = t.inventory?.totalQuantity ?? 0;
+              const items = t.prizeItems ?? [];
               return (
-                <li key={t.id} className={`flex items-center gap-3 rounded-md px-3 py-2.5 text-sm ${t.isLastPrize ? "bg-[hsl(var(--kuji-gold))]/10 border border-[hsl(var(--kuji-gold))]/30" : "bg-muted/50"}`}>
-                  {prizeImage ? (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={prizeImage} alt={t.name} className="h-12 w-12 rounded object-cover shrink-0" />
-                  ) : (
-                    <div className="h-12 w-12 rounded bg-muted shrink-0 flex items-center justify-center text-muted-foreground font-black text-lg">籤</div>
-                  )}
-                  <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 min-w-0">
-                      <Badge variant={t.isLastPrize ? "gold" : "secondary"} className="font-mono shrink-0">{t.rank}등</Badge>
-                      <span className="font-semibold truncate">{t.name}</span>
-                      {t.isLastPrize && <span className="text-[hsl(var(--kuji-gold))] font-bold shrink-0">🏆</span>}
-                    </span>
-                    <span className="text-muted-foreground font-mono text-xs shrink-0">
-                      {t.inventory?.remainingQuantity ?? 0} / {t.inventory?.totalQuantity ?? 0}
+                <div
+                  key={t.id}
+                  className={`rounded-lg border overflow-hidden ${
+                    t.isLastPrize
+                      ? "border-[hsl(var(--kuji-gold))]/50 bg-gradient-to-br from-[hsl(var(--kuji-gold))]/10 to-transparent"
+                      : "border-border bg-muted/30"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/50">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge variant={t.isLastPrize ? "gold" : "secondary"} className="font-mono shrink-0 text-base px-2.5 py-0.5">
+                        {t.rank}등
+                      </Badge>
+                      <span className="font-bold truncate">{t.name}</span>
+                      {t.isLastPrize && <span className="text-[hsl(var(--kuji-gold))] font-bold shrink-0">🏆 라스트원</span>}
+                    </div>
+                    <span className="text-xs text-muted-foreground font-mono shrink-0">
+                      잔여 <span className="font-bold text-foreground">{remaining}</span> / {total}
                     </span>
                   </div>
-                </li>
+
+                  {items.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3">
+                      {items.map((it) => (
+                        <div key={it.id} className="rounded-md overflow-hidden bg-background border">
+                          <div className="aspect-square relative bg-muted">
+                            {it.imageUrl ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img src={it.imageUrl} alt={it.name} className="absolute inset-0 w-full h-full object-cover" />
+                            ) : (
+                              <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+                                <Trophy className="h-6 w-6" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="px-2 py-1.5">
+                            <div className="text-xs font-semibold leading-tight line-clamp-2">{it.name}</div>
+                            {it.description && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{it.description}</div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-3 text-xs text-muted-foreground">상세 상품 미공개</div>
+                  )}
+                </div>
               );
             })}
-          </ul>
+          </div>
         </CardContent>
       </Card>
 

@@ -10,15 +10,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "../components/theme-toggle";
+import { BannerCarousel, type CarouselBanner } from "../components/banner-carousel";
 
 export default function HomePageV2() {
   const [kujis, setKujis] = useState<KujiSummary[] | null>(null);
+  const [banners, setBanners] = useState<CarouselBanner[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     api<KujiSummary[]>("/api/kujis")
       .then(setKujis)
       .catch((e) => setErr(e instanceof ApiError ? e.message : "failed"));
+    // 배너 실패는 메인 흐름 영향 없음 — 조용히 무시.
+    api<CarouselBanner[]>("/api/banners?placement=MAIN_HERO")
+      .then(setBanners)
+      .catch(() => setBanners([]));
   }, []);
 
   return (
@@ -36,9 +42,8 @@ export default function HomePageV2() {
           <Link href="/v2" className="flex items-center gap-2 group">
             <div className="relative">
               <div className="absolute inset-0 bg-primary blur-md opacity-50 group-hover:opacity-70 transition" />
-              <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[hsl(var(--kuji-red))] to-primary text-primary-foreground font-black text-lg shadow-lg">
-                籤
-              </div>
+              {/* 로고 이미지 자리 — 추후 img 로 교체. 현재는 그라디언트만. */}
+              <div className="relative h-10 w-10 rounded-lg bg-gradient-to-br from-[hsl(var(--kuji-red))] to-primary shadow-lg" />
             </div>
             <div className="flex flex-col leading-tight">
               <span className="text-xs text-muted-foreground tracking-[0.2em]">LUCKY</span>
@@ -62,6 +67,8 @@ export default function HomePageV2() {
             <ThemeToggle />
           </nav>
         </header>
+
+        {banners.length > 0 && <BannerCarousel banners={banners} />}
 
         <section className="relative mb-10 overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-secondary p-6 md:p-10 shadow-lg">
           <div
@@ -176,9 +183,6 @@ export default function HomePageV2() {
                                     "radial-gradient(circle at 30% 30%, hsl(var(--kuji-gold)) 0, transparent 50%)",
                                 }}
                               />
-                              <div className="absolute bottom-3 right-3 text-primary-foreground/80 font-black text-5xl leading-none opacity-30 group-hover:opacity-50 transition select-none">
-                                籤
-                              </div>
                             </>
                           )}
                           <div className="absolute top-3 left-3 flex gap-1.5">

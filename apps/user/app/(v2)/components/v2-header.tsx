@@ -26,9 +26,8 @@ export function V2Header({
         <Link href="/v2" className="flex items-center gap-2 group min-w-0">
           <div className="relative shrink-0">
             <div className="absolute inset-0 bg-primary blur-md opacity-50 group-hover:opacity-70 transition" />
-            <div className="relative flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-[hsl(var(--kuji-red))] to-primary text-primary-foreground font-black text-sm shadow">
-              籤
-            </div>
+            {/* 로고 이미지 자리 — 추후 img 로 교체. 현재는 그라디언트만. */}
+            <div className="relative h-8 w-8 rounded-md bg-gradient-to-br from-[hsl(var(--kuji-red))] to-primary shadow" />
           </div>
           <span className="font-black tracking-tight truncate">LUCKY DRAW</span>
         </Link>
