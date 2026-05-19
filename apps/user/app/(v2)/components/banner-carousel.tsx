@@ -20,7 +20,7 @@ interface Props {
   pauseOnHover?: boolean;
 }
 
-export function BannerCarousel({ banners, intervalMs = 5000, pauseOnHover = true }: Props) {
+export function BannerCarousel({ banners, intervalMs = 10000, pauseOnHover = true }: Props) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
 
@@ -35,18 +35,18 @@ export function BannerCarousel({ banners, intervalMs = 5000, pauseOnHover = true
 
   if (banners.length === 0) return null;
 
-  const cur = banners[index]!;
   const goto = (i: number) => setIndex(((i % banners.length) + banners.length) % banners.length);
 
-  const inner = (
-    <div className="absolute inset-0">
-      {cur.imageUrl ? (
+  // 모든 배너를 스택으로 깔고 opacity 로 크로스페이드 (1초 전환).
+  const slide = (b: CarouselBanner, active: boolean) => (
+    <div
+      className={`absolute inset-0 transition-opacity duration-[1000ms] ease-in-out ${
+        active ? "opacity-100 z-[1]" : "opacity-0 z-0 pointer-events-none"
+      }`}
+    >
+      {b.imageUrl ? (
         /* eslint-disable-next-line @next/next/no-img-element */
-        <img
-          src={cur.imageUrl}
-          alt={cur.title}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
+        <img src={b.imageUrl} alt={b.title} className="absolute inset-0 w-full h-full object-cover" />
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--kuji-red))]/80 via-primary to-[hsl(var(--kuji-ink))]" />
       )}
@@ -54,17 +54,27 @@ export function BannerCarousel({ banners, intervalMs = 5000, pauseOnHover = true
       <div className="absolute inset-0 flex items-end p-6 md:p-8">
         <div className="text-primary-foreground">
           <h3 className="font-black text-xl md:text-3xl tracking-tight leading-tight drop-shadow">
-            {cur.title}
+            {b.title}
           </h3>
-          {cur.body && (
+          {b.body && (
             <p className="mt-1 text-sm md:text-base text-primary-foreground/90 line-clamp-2 max-w-2xl drop-shadow">
-              {cur.body}
+              {b.body}
             </p>
           )}
         </div>
       </div>
     </div>
   );
+
+  const slidesLayer = (
+    <div className="absolute inset-0">
+      {banners.map((b, i) => (
+        <div key={b.id}>{slide(b, i === index)}</div>
+      ))}
+    </div>
+  );
+
+  const cur = banners[index]!;
 
   return (
     <section
@@ -75,15 +85,15 @@ export function BannerCarousel({ banners, intervalMs = 5000, pauseOnHover = true
       {cur.linkUrl ? (
         cur.linkUrl.startsWith("/") ? (
           <Link href={cur.linkUrl} className="absolute inset-0 block">
-            {inner}
+            {slidesLayer}
           </Link>
         ) : (
           <a href={cur.linkUrl} target="_blank" rel="noreferrer" className="absolute inset-0 block">
-            {inner}
+            {slidesLayer}
           </a>
         )
       ) : (
-        inner
+        slidesLayer
       )}
 
       {banners.length > 1 && (
