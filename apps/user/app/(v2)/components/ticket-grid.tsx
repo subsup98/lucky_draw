@@ -74,12 +74,7 @@ export function TicketGrid({
               )}
               aria-label={`자리 ${t.position}`}
             >
-              {t.status === "AVAILABLE" && <span>{t.position}</span>}
-              {selected && <span>{t.position}</span>}
-              {t.status === "RESERVED" && !t.mine && (
-                <Lock className="h-3 w-3 opacity-50" />
-              )}
-              {t.status === "SOLD" && (
+              {t.status === "SOLD" ? (
                 <span className="flex flex-col items-center leading-none">
                   {t.isLastPrize ? (
                     <Trophy className="h-3 w-3 text-[hsl(var(--kuji-gold))]" />
@@ -87,6 +82,10 @@ export function TicketGrid({
                     <span className="text-[9px]">{t.rank ?? "?"}</span>
                   )}
                 </span>
+              ) : t.status === "RESERVED" && !t.mine ? (
+                <Lock className="h-3 w-3 opacity-50" />
+              ) : (
+                <span>{t.position}</span>
               )}
             </button>
           );
