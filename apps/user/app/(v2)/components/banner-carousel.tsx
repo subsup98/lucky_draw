@@ -37,21 +37,31 @@ export function BannerCarousel({ banners, intervalMs = 10000, pauseOnHover = tru
 
   const goto = (i: number) => setIndex(((i % banners.length) + banners.length) % banners.length);
 
-  // 모든 배너를 스택으로 깔고 opacity 로 크로스페이드 (1초 전환).
+  // 크로스페이드 (1.5초) + 활성 슬라이드 천천히 줌인 (Ken Burns) 으로 \"움직이는 듯\" 느낌.
   const slide = (b: CarouselBanner, active: boolean) => (
     <div
-      className={`absolute inset-0 transition-opacity duration-[1000ms] ease-in-out ${
+      className={`absolute inset-0 transition-opacity duration-[1500ms] ease-in-out ${
         active ? "opacity-100 z-[1]" : "opacity-0 z-0 pointer-events-none"
       }`}
     >
       {b.imageUrl ? (
         /* eslint-disable-next-line @next/next/no-img-element */
-        <img src={b.imageUrl} alt={b.title} className="absolute inset-0 w-full h-full object-cover" />
+        <img
+          src={b.imageUrl}
+          alt={b.title}
+          className={`absolute inset-0 w-full h-full object-cover transition-transform ease-out ${
+            active ? "duration-[12000ms] scale-110" : "duration-[1500ms] scale-100"
+          }`}
+        />
       ) : (
         <div className="absolute inset-0 bg-gradient-to-br from-[hsl(var(--kuji-red))]/80 via-primary to-[hsl(var(--kuji-ink))]" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-      <div className="absolute inset-0 flex items-end p-6 md:p-8">
+      <div
+        className={`absolute inset-0 flex items-end p-6 md:p-8 transition-transform duration-[1500ms] ease-out ${
+          active ? "translate-y-0" : "translate-y-2"
+        }`}
+      >
         <div className="text-primary-foreground">
           <h3 className="font-black text-xl md:text-3xl tracking-tight leading-tight drop-shadow">
             {b.title}

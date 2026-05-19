@@ -122,10 +122,11 @@ model User {
   // 주문·추첨·배송 이력은 외래키 그대로 유지(전자상거래법 5년 보관).
   anonymizedAt  DateTime?
 
-  addresses    Address[]
-  orders       Order[]
-  drawResults  DrawResult[]
-  inquiries    Inquiry[]
+  addresses        Address[]
+  orders           Order[]
+  drawResults      DrawResult[]
+  inquiries        Inquiry[]
+  reservedTickets  Ticket[]     @relation("TicketReservedBy")
 
   @@index([status])
   @@index([createdAt])
@@ -173,6 +174,7 @@ model KujiEvent {
   prizeTiers  PrizeTier[]
   orders      Order[]
   drawResults DrawResult[]
+  tickets     Ticket[]
 
   @@index([status, saleStartAt])
   @@index([saleEndAt])
@@ -196,6 +198,7 @@ model PrizeTier {
   prizeItems  PrizeItem[]
   inventory   Inventory?
   drawResults DrawResult[]
+  tickets     Ticket[]
 
   @@unique([kujiEventId, rank])
   @@index([kujiEventId, displayOrder])
@@ -213,6 +216,7 @@ model PrizeItem {
 
   prizeTier   PrizeTier    @relation(fields: [prizeTierId], references: [id], onDelete: Cascade)
   drawResults DrawResult[]
+  tickets     Ticket[]
 
   @@index([prizeTierId])
 }
@@ -258,6 +262,7 @@ model Order {
   payment     Payment?
   drawResults DrawResult[]
   shipment    Shipment?
+  tickets     Ticket[]
 
   @@index([userId, createdAt])
   @@index([kujiEventId, status])
@@ -307,11 +312,53 @@ model DrawResult {
   kujiEvent KujiEvent  @relation(fields: [kujiEventId], references: [id])
   prizeTier PrizeTier  @relation(fields: [prizeTierId], references: [id])
   prizeItem PrizeItem? @relation(fields: [prizeItemId], references: [id])
+  ticket    Ticket?
 
   @@unique([orderId, ticketIndex])
   @@index([userId, drawnAt])
   @@index([kujiEventId, drawnAt])
   @@index([prizeTierId])
+}
+
+// =========================================================
+// Ticket: 픽앤팝식 위치 선택. KujiEvent.totalTickets 만큼 행 생성, prizeTier/prizeItem 사전 셔플.
+// 사용자는 자리를 골라서 결제. 결제 후 prizeTier 가 곧 추첨 결과.
+// =========================================================
+model Ticket {
+  id                String       @id @default(cuid())
+  kujiEventId       String
+  position          Int          // 1..totalTickets
+  prizeTierId       String       // 사전 셔플 결과
+  prizeItemId       String?      // tier 내 여러 PrizeItem 일 때 분배 결과
+  status            TicketStatus @default(AVAILABLE)
+  // RESERVED 상태일 때만 채워짐. reserveExpiresAt 이후 cron 이 AVAILABLE 로 복귀.
+  reservedByUserId  String?
+  reservedAt        DateTime?
+  reserveExpiresAt  DateTime?
+  // SOLD 상태일 때 채워짐.
+  orderId           String?
+  drawResultId      String?      @unique
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  kujiEvent  KujiEvent   @relation(fields: [kujiEventId], references: [id], onDelete: Cascade)
+  prizeTier  PrizeTier   @relation(fields: [prizeTierId], references: [id])
+  prizeItem  PrizeItem?  @relation(fields: [prizeItemId], references: [id])
+  reservedBy User?       @relation("TicketReservedBy", fields: [reservedByUserId], references: [id])
+  order      Order?      @relation(fields: [orderId], references: [id])
+  drawResult DrawResult? @relation(fields: [drawResultId], references: [id])
+
+  @@unique([kujiEventId, position])
+  @@index([kujiEventId, status])
+  @@index([reserveExpiresAt])
+  @@index([reservedByUserId, status])
+  @@index([orderId])
+}
+
+enum TicketStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
 }
 
 model Shipment {

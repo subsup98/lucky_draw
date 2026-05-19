@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsInt,
   IsOptional,
   IsString,
@@ -37,10 +40,24 @@ export class CreateOrderDto {
   @MaxLength(40)
   kujiEventId!: string;
 
+  /**
+   * v1 (랜덤 추첨) 흐름: ticketCount 만 지정.
+   * v2 (픽앤팝, 사전 셔플) 흐름: ticketIds 로 사전 예약한 자리 지정 — ticketCount 무시.
+   * 둘 중 하나는 반드시 채워야 한다.
+   */
+  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(30)
-  ticketCount!: number;
+  ticketCount?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  @MaxLength(40, { each: true })
+  ticketIds?: string[];
 
   @ValidateNested()
   @Type(() => ShippingAddressDto)

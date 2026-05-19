@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadTossPayments } from "@tosspayments/payment-sdk";
 import { Trophy, Truck, AlertTriangle, Ticket } from "lucide-react";
 import { api, ApiError, newIdempotencyKey } from "@/app/lib/api";
 import type { IntentResponse, OrderResponse } from "@/app/lib/types";
 import { V2Header } from "../../../components/v2-header";
+import { TicketGrid, type TicketCell } from "../../../components/ticket-grid";
 
 // API가 실제로 반환하는 detail 응답 형태 (kuji.service.ts#detail).
 // `tiers` 가 아니라 `prizeTiers` 이고, inventory 는 totalQuantity/remainingQuantity.
@@ -46,7 +47,6 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [ticketCount, setTicketCount] = useState(1);
   const [recipient, setRecipient] = useState("");
   const [phone, setPhone] = useState("");
   const [postalCode, setPostalCode] = useState("");
@@ -54,11 +54,43 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
   const [addressLine2, setAddressLine2] = useState("");
   const [agreeNoRefund, setAgreeNoRefund] = useState(false);
 
+  // 자리(Ticket) 기반 상태
+  const [tickets, setTickets] = useState<TicketCell[] | null>(null);
+  const [ticketsErr, setTicketsErr] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [reservedTicketIds, setReservedTicketIds] = useState<string[] | null>(null);
+  const [reserveExpiresAt, setReserveExpiresAt] = useState<Date | null>(null);
+
+  const ticketCount = selectedIds.length || reservedTicketIds?.length || 0;
+  const hasTicketGrid = (tickets?.length ?? 0) > 0;
+
   useEffect(() => {
     api<KujiDetailResponse>(`/api/kujis/${params.id}`)
       .then(setKuji)
       .catch((e) => setErr(e instanceof ApiError ? e.message : "failed"));
   }, [params.id]);
+
+  const loadTickets = useCallback(() => {
+    api<TicketCell[]>(`/api/kujis/${params.id}/tickets`)
+      .then((rows) => {
+        setTickets(rows);
+        setTicketsErr(null);
+      })
+      .catch((e) => setTicketsErr(e instanceof ApiError ? e.message : "failed"));
+  }, [params.id]);
+
+  useEffect(() => {
+    loadTickets();
+    // 폴링 — 다른 사용자의 점유/판매 반영
+    const id = setInterval(loadTickets, 10000);
+    return () => clearInterval(id);
+  }, [loadTickets]);
+
+  const toggle = useCallback((t: TicketCell) => {
+    setSelectedIds((prev) =>
+      prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id],
+    );
+  }, []);
 
   async function buy(e: React.FormEvent) {
     e.preventDefault();
@@ -66,20 +98,54 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
     setErr(null);
     setBusy(true);
     try {
-      const key = sessionStorage.getItem(`idemp:${kuji.id}:${ticketCount}`) ?? newIdempotencyKey();
-      sessionStorage.setItem(`idemp:${kuji.id}:${ticketCount}`, key);
+      let ticketIds = reservedTicketIds;
+      // 픽앤팝 흐름: 아직 reserve 안 했으면 지금 일괄 reserve
+      if (hasTicketGrid && (!ticketIds || ticketIds.length === 0)) {
+        if (selectedIds.length === 0) {
+          throw new Error("자리를 1개 이상 선택해주세요");
+        }
+        const positions = selectedIds
+          .map((id) => tickets!.find((t) => t.id === id)?.position)
+          .filter((p): p is number => typeof p === "number");
+        const reserved = await api<{ ticketIds: string[]; reserveExpiresAt: string }>(
+          `/api/kujis/${kuji.id}/tickets/reserve`,
+          { method: "POST", body: JSON.stringify({ positions }) },
+        );
+        ticketIds = reserved.ticketIds;
+        setReservedTicketIds(reserved.ticketIds);
+        setReserveExpiresAt(new Date(reserved.reserveExpiresAt));
+      }
+
+      const idempKey =
+        ticketIds && ticketIds.length > 0
+          ? `idemp:${kuji.id}:tickets:${ticketIds.join(",")}`
+          : `idemp:${kuji.id}:1`;
+      const key = sessionStorage.getItem(idempKey) ?? newIdempotencyKey();
+      sessionStorage.setItem(idempKey, key);
+
+      const orderPayload =
+        ticketIds && ticketIds.length > 0
+          ? {
+              kujiEventId: kuji.id,
+              ticketIds,
+              shippingAddress: {
+                recipient, phone, postalCode, addressLine1,
+                addressLine2: addressLine2 || undefined,
+              },
+            }
+          : {
+              kujiEventId: kuji.id,
+              ticketCount: 1,
+              shippingAddress: {
+                recipient, phone, postalCode, addressLine1,
+                addressLine2: addressLine2 || undefined,
+              },
+            };
 
       const order = await api<OrderResponse>("/api/orders", {
         method: "POST",
         idempotencyKey: key,
-        body: JSON.stringify({
-          kujiEventId: kuji.id,
-          ticketCount,
-          shippingAddress: {
-            recipient, phone, postalCode, addressLine1,
-            addressLine2: addressLine2 || undefined,
-          },
-        }),
+        body: JSON.stringify(orderPayload),
       });
 
       const intent = await api<IntentResponse>("/api/payments/intent", {
@@ -111,10 +177,9 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
         router.push(`/v2/payment/success?orderId=${order.id}&mock=1`);
       }
     } catch (e) {
-      // 이미 결제/추첨이 끝난 주문에 대한 재결제 시도는 idempotency 키를 비워서
-      // 다음 클릭이 새 주문을 만들도록 한다.
       if (e instanceof ApiError && /not payable/i.test(e.message)) {
-        sessionStorage.removeItem(`idemp:${kuji.id}:${ticketCount}`);
+        // 재결제 시도는 idempotency 키 초기화
+        sessionStorage.clear();
       }
       if (e instanceof ApiError && e.status === 401) {
         router.replace(`/v2/login?next=/v2/kujis/${kuji.id}`);
@@ -152,7 +217,6 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
     new Date(kuji.saleStartAt) <= now &&
     new Date(kuji.saleEndAt) >= now;
   const soldOut = remainingTickets <= 0;
-  const maxBuyable = Math.min(remainingTickets, kuji.perUserLimit ?? 30, 30);
   const sold = kuji.totalTickets - remainingTickets;
   const pct = kuji.totalTickets > 0 ? Math.min(100, (sold / kuji.totalTickets) * 100) : 0;
 
@@ -276,6 +340,30 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
         </CardContent>
       </Card>
 
+      {/* Ticket Grid — 픽앤팝식 자리 선택 */}
+      {hasTicketGrid && tickets && (
+        <Card className="mb-6">
+          <CardContent className="p-6">
+            <h2 className="font-bold flex items-center gap-2 mb-2">
+              <Ticket className="h-5 w-5 text-primary" /> 자리 선택
+            </h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              뽑고 싶은 자리를 골라주세요 (최대 5자리). 결제 시 5분 점유.
+            </p>
+            <TicketGrid
+              tickets={tickets}
+              selectedIds={selectedIds}
+              onToggle={toggle}
+              maxSelect={5}
+              reserveExpiresAt={reserveExpiresAt}
+            />
+            {ticketsErr && (
+              <div className="mt-3 text-xs text-destructive">자리 정보 불러오기 실패: {ticketsErr}</div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {!isOnSale || soldOut ? (
         <Card className="bg-muted/30">
           <CardContent className="py-12 text-center text-muted-foreground font-semibold">판매 종료</CardContent>
@@ -287,10 +375,23 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
               <Ticket className="h-5 w-5 text-primary" /> 구매하기
             </h2>
             <form onSubmit={buy} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="ticketCount">티켓 수량 <span className="text-muted-foreground font-normal">(최대 {maxBuyable})</span></Label>
-                <Input id="ticketCount" type="number" min={1} max={maxBuyable} value={ticketCount} onChange={(e) => setTicketCount(Number(e.target.value))} />
-              </div>
+              {!hasTicketGrid && (
+                <div className="space-y-1.5">
+                  <Label>티켓 수량</Label>
+                  <p className="text-xs text-muted-foreground">
+                    자리 선택이 활성화되지 않은 쿠지입니다 — 1장 랜덤 추첨으로 진행됩니다.
+                    <span className="block mt-0.5">관리자에서 자리 셔플(Seed)을 실행하세요.</span>
+                  </p>
+                </div>
+              )}
+              {hasTicketGrid && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  선택한 자리: <span className="font-mono font-bold">{selectedIds.length}</span>자리 · 결제 금액{" "}
+                  <span className="font-mono font-bold">
+                    {(kuji.pricePerTicket * Math.max(1, selectedIds.length)).toLocaleString()}원
+                  </span>
+                </div>
+              )}
 
               <Separator />
 
@@ -331,8 +432,22 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
                 </div>
               )}
 
-              <Button type="submit" variant="kuji" size="lg" disabled={busy || !agreeNoRefund} className="w-full">
-                {busy ? "처리 중..." : `${(kuji.pricePerTicket * ticketCount).toLocaleString()}원 결제하기`}
+              <Button
+                type="submit"
+                variant="kuji"
+                size="lg"
+                disabled={
+                  busy ||
+                  !agreeNoRefund ||
+                  (hasTicketGrid && selectedIds.length === 0 && !reservedTicketIds)
+                }
+                className="w-full"
+              >
+                {busy
+                  ? "처리 중..."
+                  : `${(
+                      kuji.pricePerTicket * Math.max(1, ticketCount || selectedIds.length)
+                    ).toLocaleString()}원 결제하기`}
               </Button>
             </form>
           </CardContent>

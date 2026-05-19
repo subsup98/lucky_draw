@@ -54,7 +54,15 @@ export class DrawService {
       throw new ConflictException(`order not drawable: ${order.status}`);
     }
 
-    // 추첨 실행 — Inventory.version CAS + DrawResult insert + Order 전이 를 단일 트랜잭션으로.
+    // 픽앤팝(v2): 사전 셔플 결과 사용. v1: Inventory.version CAS + 가중 랜덤.
+    const hasTickets = await this.prisma.ticket.count({
+      where: { orderId, kujiEventId: order.kujiEventId },
+    });
+    if (hasTickets > 0) {
+      return this.executeForTickets(userId, orderId, ctx);
+    }
+
+    // v1 추첨 실행 — Inventory.version CAS + DrawResult insert + Order 전이 를 단일 트랜잭션으로.
     const result = await this.prisma.$transaction(
       async (tx) => {
         // Order 락 (동시 draw 호출 방어)
@@ -148,6 +156,134 @@ export class DrawService {
           tierRank: r.tierRank,
           isLastPrize: r.isLastPrize,
         })),
+      },
+    });
+    return result;
+  }
+
+  /**
+   * v2 픽앤팝 추첨: Ticket 의 prizeTierId 가 곧 결과.
+   * - PAID → DRAWN 전이
+   * - Ticket.status SOLD 마킹
+   * - DrawResult 생성 (ticket.prizeTier 그대로)
+   * - Inventory 차감은 생략 (사전 셔플이라 자리에 이미 결과 확정)
+   */
+  private async executeForTickets(userId: string, orderId: string, ctx?: AuditContext) {
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const [locked] = await tx.$queryRaw<
+          Array<{
+            status: string;
+            kujiEventId: string;
+            shippingSnapshot: unknown;
+          }>
+        >`
+          SELECT "status","kujiEventId","shippingSnapshot" FROM "Order"
+           WHERE "id" = ${orderId} FOR UPDATE
+        `;
+        if (!locked) throw new NotFoundException('order not found');
+        if (locked.status === 'DRAWN') return this.loadResults(orderId, tx);
+        if (locked.status !== 'PAID') {
+          throw new ConflictException(`order not drawable: ${locked.status}`);
+        }
+
+        const tickets = await tx.ticket.findMany({
+          where: { orderId },
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            position: true,
+            prizeTierId: true,
+            prizeItemId: true,
+            prizeTier: {
+              select: { rank: true, name: true, isLastPrize: true, animationPreset: true },
+            },
+          },
+        });
+        if (tickets.length === 0) {
+          throw new ConflictException('order has no tickets');
+        }
+
+        const seedBase = randomBytes(8).toString('hex');
+        const drawn: Array<{
+          ticketIndex: number;
+          tierId: string;
+          tierRank: string;
+          tierName: string;
+          isLastPrize: boolean;
+          animationPreset: string | null;
+          prizeItemId: string | null;
+        }> = [];
+
+        for (let i = 0; i < tickets.length; i++) {
+          const t = tickets[i]!;
+          const ticketIndex = i + 1;
+          await tx.drawResult.create({
+            data: {
+              orderId,
+              userId,
+              kujiEventId: locked.kujiEventId,
+              ticketIndex,
+              prizeTierId: t.prizeTierId,
+              prizeItemId: t.prizeItemId,
+              seed: `${seedBase}:${t.position}`,
+              snapshot: {
+                algorithm: 'preassigned-v1',
+                ticketId: t.id,
+                position: t.position,
+              },
+            },
+          });
+          await tx.ticket.update({
+            where: { id: t.id },
+            data: {
+              status: 'SOLD',
+              reservedByUserId: null,
+              reservedAt: null,
+              reserveExpiresAt: null,
+            },
+          });
+          drawn.push({
+            ticketIndex,
+            tierId: t.prizeTierId,
+            tierRank: t.prizeTier.rank,
+            tierName: t.prizeTier.name,
+            isLastPrize: t.prizeTier.isLastPrize,
+            animationPreset: t.prizeTier.animationPreset ?? null,
+            prizeItemId: t.prizeItemId,
+          });
+        }
+
+        const updated = await tx.$executeRaw`
+          UPDATE "Order"
+             SET "status"='DRAWN', "drawnAt"=${new Date()}, "updatedAt"=${new Date()}
+           WHERE "id"=${orderId} AND "status"='PAID'
+        `;
+        if (updated === 0) {
+          throw new ConflictException('order state changed concurrently');
+        }
+
+        await this.shipment.createForOrderInTx(tx, orderId, locked.shippingSnapshot);
+
+        return {
+          orderId,
+          ticketCount: drawn.length,
+          results: drawn,
+        };
+      },
+      { timeout: 15000, isolationLevel: 'ReadCommitted' },
+    );
+
+    void this.audit.record({
+      actorType: 'USER',
+      actorUserId: userId,
+      action: 'DRAW_EXECUTE',
+      targetType: 'Order',
+      targetId: orderId,
+      ctx,
+      metadata: {
+        ticketCount: result.ticketCount,
+        algorithm: 'preassigned-v1',
       },
     });
     return result;

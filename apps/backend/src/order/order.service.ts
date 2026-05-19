@@ -116,10 +116,20 @@ export class OrderService {
       return { status: 200, body: this.serializeOrder(existing) };
     }
 
+    // 픽앤팝(v2): ticketIds 가 있으면 사전 점유한 자리를 기반으로 주문 생성.
+    // 기존 랜덤 추첨 흐름(v1)과 코드 분기.
+    if (dto.ticketIds && dto.ticketIds.length > 0) {
+      return this.createWithTicketsTransactional(userId, dto, idempotencyKey);
+    }
+    if (!dto.ticketCount) {
+      throw new BadRequestException('ticketCount or ticketIds required');
+    }
+
     const now = new Date();
+    const ticketCount = dto.ticketCount;
 
     // Redis 1차 게이트 — DB CAS 이전에 빠르게 out-of-stock 차단.
-    const gate = await this.stock.reserve(dto.kujiEventId, dto.ticketCount);
+    const gate = await this.stock.reserve(dto.kujiEventId, ticketCount);
     if (!gate.ok) {
       if (gate.reason === 'out_of_stock') {
         throw new ConflictException('out of stock');
@@ -131,7 +141,7 @@ export class OrderService {
     // 이 지점 이후에 throw 되는 모든 경로는 Redis 를 복구해야 한다.
     const releaseOnFail = async () => {
       if (gate.ok && gate.gated) {
-        await this.stock.release(dto.kujiEventId, dto.ticketCount);
+        await this.stock.release(dto.kujiEventId, ticketCount);
       }
     };
 
@@ -141,13 +151,13 @@ export class OrderService {
         //    affected rows == 0 이면 재고 부족 / 판매중 아님 / 판매 기간 밖.
         const updated = await tx.$executeRaw<number>`
           UPDATE "KujiEvent"
-             SET "soldTickets" = "soldTickets" + ${dto.ticketCount},
+             SET "soldTickets" = "soldTickets" + ${ticketCount},
                  "updatedAt"   = ${now}
            WHERE "id" = ${dto.kujiEventId}
              AND "status" = 'ON_SALE'
              AND "saleStartAt" <= ${now}
              AND "saleEndAt"   >= ${now}
-             AND "soldTickets" + ${dto.ticketCount} <= "totalTickets"
+             AND "soldTickets" + ${ticketCount} <= "totalTickets"
         `;
         if (updated === 0) {
           // 어느 조건이 실패했는지 구체화
@@ -192,7 +202,7 @@ export class OrderService {
             _sum: { ticketCount: true },
           });
           const already = agg._sum.ticketCount ?? 0;
-          if (already + dto.ticketCount > event.perUserLimit) {
+          if (already + ticketCount > event.perUserLimit) {
             throw new BadRequestException(
               `per-user limit exceeded (limit=${event.perUserLimit}, already=${already})`,
             );
@@ -200,12 +210,12 @@ export class OrderService {
         }
 
         // 4) Order 생성
-        const totalAmount = event.pricePerTicket * dto.ticketCount;
+        const totalAmount = event.pricePerTicket * ticketCount;
         const order = await tx.order.create({
           data: {
             userId,
             kujiEventId: dto.kujiEventId,
-            ticketCount: dto.ticketCount,
+            ticketCount: ticketCount,
             unitPrice: event.pricePerTicket,
             totalAmount,
             status: 'PENDING_PAYMENT',
@@ -243,6 +253,164 @@ export class OrderService {
       }
       // 모든 실패 경로(validation·재고·락 경합 등)에서 Redis 복구
       await releaseOnFail();
+      throw err;
+    }
+  }
+
+  /**
+   * v2 픽앤팝 흐름: 사전에 reserve 된 ticketIds 를 결제 주문에 연결.
+   * - tickets 모두 RESERVED + 이 user 소유 + 만료 안 됨 + 동일 kuji 검증
+   * - tickets 에 orderId 마킹 (status 는 RESERVED 유지 → 결제 후 draw 단계에서 SOLD)
+   * - KujiEvent.soldTickets 증가 (v1 과 동일 시점)
+   * - Inventory 차감은 안 함 (사전 셔플이라 자리별 prizeTier 가 이미 확정)
+   */
+  private async createWithTicketsTransactional(
+    userId: string,
+    dto: CreateOrderDto,
+    idempotencyKey: string,
+  ): Promise<CachedIdempotentResponse> {
+    const ticketIds = dto.ticketIds!;
+    const now = new Date();
+
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        // 1) 대상 ticket 락 + 검증
+        const tickets = await tx.$queryRaw<
+          Array<{
+            id: string;
+            kujiEventId: string;
+            position: number;
+            status: 'AVAILABLE' | 'RESERVED' | 'SOLD';
+            reservedByUserId: string | null;
+            reserveExpiresAt: Date | null;
+            orderId: string | null;
+          }>
+        >`
+          SELECT "id","kujiEventId","position","status","reservedByUserId","reserveExpiresAt","orderId"
+            FROM "Ticket"
+           WHERE "id" IN (${Prisma.join(ticketIds)})
+           FOR UPDATE
+        `;
+        if (tickets.length !== ticketIds.length) {
+          throw new NotFoundException('일부 자리가 존재하지 않습니다');
+        }
+        for (const t of tickets) {
+          if (t.kujiEventId !== dto.kujiEventId) {
+            throw new BadRequestException('자리가 해당 쿠지에 속하지 않습니다');
+          }
+          if (t.status !== 'RESERVED') {
+            throw new ConflictException(`${t.position}번 자리가 점유 상태가 아님`);
+          }
+          if (t.reservedByUserId !== userId) {
+            throw new ForbiddenException('자기 자리가 아닙니다');
+          }
+          if (!t.reserveExpiresAt || t.reserveExpiresAt < now) {
+            throw new ConflictException('점유 만료 — 다시 선택해주세요');
+          }
+          if (t.orderId && t.orderId !== null) {
+            throw new ConflictException('이미 주문에 묶인 자리');
+          }
+        }
+
+        // 2) 쿠지 상태/가격
+        const event = await tx.kujiEvent.findUnique({
+          where: { id: dto.kujiEventId },
+          select: {
+            id: true,
+            status: true,
+            saleStartAt: true,
+            saleEndAt: true,
+            totalTickets: true,
+            soldTickets: true,
+            pricePerTicket: true,
+            perUserLimit: true,
+          },
+        });
+        if (!event) throw new NotFoundException('kuji not found');
+        if (event.status !== 'ON_SALE') {
+          throw new BadRequestException(`kuji not on sale: ${event.status}`);
+        }
+        if (event.saleStartAt > now || event.saleEndAt < now) {
+          throw new BadRequestException('kuji sale window closed');
+        }
+
+        const ticketCount = ticketIds.length;
+
+        // 3) perUserLimit
+        if (event.perUserLimit != null) {
+          const agg = await tx.order.aggregate({
+            where: {
+              userId,
+              kujiEventId: dto.kujiEventId,
+              status: { notIn: ['CANCELLED', 'FAILED', 'REFUNDED'] },
+            },
+            _sum: { ticketCount: true },
+          });
+          const already = agg._sum.ticketCount ?? 0;
+          if (already + ticketCount > event.perUserLimit) {
+            throw new BadRequestException(
+              `per-user limit exceeded (limit=${event.perUserLimit}, already=${already})`,
+            );
+          }
+        }
+
+        // 4) soldTickets 원자 증가 + 범위 가드
+        const updated = await tx.$executeRaw<number>`
+          UPDATE "KujiEvent"
+             SET "soldTickets" = "soldTickets" + ${ticketCount},
+                 "updatedAt"   = ${now}
+           WHERE "id" = ${dto.kujiEventId}
+             AND "soldTickets" + ${ticketCount} <= "totalTickets"
+        `;
+        if (updated === 0) {
+          throw new ConflictException('out of stock');
+        }
+
+        // 5) Order 생성
+        const totalAmount = event.pricePerTicket * ticketCount;
+        const order = await tx.order.create({
+          data: {
+            userId,
+            kujiEventId: dto.kujiEventId,
+            ticketCount,
+            unitPrice: event.pricePerTicket,
+            totalAmount,
+            status: 'PENDING_PAYMENT',
+            idempotencyKey,
+            shippingSnapshot: this.cipher.encryptJson(
+              {
+                ...dto.shippingAddress,
+                capturedAt: now.toISOString(),
+              },
+              FieldCipherService.aad('Order', 'shippingSnapshot'),
+            ) as unknown as Prisma.JsonObject,
+          },
+          select: this.orderSelect(),
+        });
+
+        // 6) 티켓에 orderId 마킹 (status 는 RESERVED 유지)
+        await tx.ticket.updateMany({
+          where: { id: { in: ticketIds } },
+          data: { orderId: order.id },
+        });
+
+        return order;
+      });
+
+      return { status: 201, body: this.serializeOrder(created) };
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const dup = await this.prisma.order.findUnique({
+          where: { idempotencyKey },
+          select: this.orderSelect(),
+        });
+        if (dup && dup.userId === userId) {
+          return { status: 200, body: this.serializeOrder(dup) };
+        }
+      }
       throw err;
     }
   }

@@ -21,6 +21,7 @@ import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
 import { ShipmentModule } from './shipment/shipment.module';
 import { StockModule } from './stock/stock.module';
+import { TicketModule } from './ticket/ticket.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { StockModule } from './stock/stock.module';
     BannerModule,
     UploadModule,
     UserModule,
+    TicketModule,
   ],
   controllers: [HealthController],
 })
