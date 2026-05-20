@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { loadTossPayments } from "@tosspayments/payment-sdk";
-import { Trophy, Truck, AlertTriangle, Ticket } from "lucide-react";
-import { api, ApiError, newIdempotencyKey } from "@/app/lib/api";
-import type { IntentResponse, OrderResponse } from "@/app/lib/types";
+import { Trophy, Ticket } from "lucide-react";
+import { api, ApiError } from "@/app/lib/api";
 import { V2Header } from "../../../components/v2-header";
 import { TicketGrid, type TicketCell } from "../../../components/ticket-grid";
+import { TierInventoryGrid } from "../../../components/tier-inventory-grid";
 import { TopRibbonBanner } from "../../../components/top-ribbon-banner";
 import type { CarouselBanner } from "../../../components/banner-carousel";
 import { usePreviewBanner } from "../../../lib/preview-banner";
@@ -39,10 +38,7 @@ type KujiDetailResponse = {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 
 export default function KujiDetailPageV2({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -53,36 +49,11 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [recipient, setRecipient] = useState("");
-  const [phone, setPhone] = useState("");
-  const [postalCode, setPostalCode] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
-  const [addressLine2, setAddressLine2] = useState("");
-  const [agreeNoRefund, setAgreeNoRefund] = useState(false);
-
-  // 주소 (Address) 상태
-  type SavedAddress = {
-    id: string;
-    recipient: string;
-    phone: string;
-    postalCode: string;
-    addressLine1: string;
-    addressLine2: string | null;
-    isDefault: boolean;
-  };
-  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[] | null>(null);
-  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
-  const [useNewAddress, setUseNewAddress] = useState(false);
-  const [saveNewAddress, setSaveNewAddress] = useState(true);
-
   // 자리(Ticket) 기반 상태
   const [tickets, setTickets] = useState<TicketCell[] | null>(null);
   const [ticketsErr, setTicketsErr] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [reservedTicketIds, setReservedTicketIds] = useState<string[] | null>(null);
-  const [reserveExpiresAt, setReserveExpiresAt] = useState<Date | null>(null);
 
-  const ticketCount = selectedIds.length || reservedTicketIds?.length || 0;
   const hasTicketGrid = (tickets?.length ?? 0) > 0;
 
   useEffect(() => {
@@ -110,32 +81,22 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
     return () => clearInterval(id);
   }, [loadTickets]);
 
-  // 저장된 배송지 로드 (로그인 안 했으면 401, 조용히 무시)
-  useEffect(() => {
-    api<SavedAddress[]>("/api/me/addresses")
-      .then((rows) => {
-        setSavedAddresses(rows);
-        const def = rows.find((r) => r.isDefault) ?? rows[0];
-        if (def) setSelectedAddressId(def.id);
-      })
-      .catch(() => setSavedAddresses([]));
-  }, []);
-
   const toggle = useCallback((t: TicketCell) => {
     setSelectedIds((prev) =>
       prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id],
     );
   }, []);
 
-  async function buy(e: React.FormEvent) {
-    e.preventDefault();
+  async function proceedToCheckout() {
     if (!kuji) return;
     setErr(null);
     setBusy(true);
     try {
-      let ticketIds = reservedTicketIds;
-      // 픽앤팝 흐름: 아직 reserve 안 했으면 지금 일괄 reserve
-      if (hasTicketGrid && (!ticketIds || ticketIds.length === 0)) {
+      // 픽앤팝: 선택한 자리를 즉시 점유. 비픽앤팝: 자리 개념 없이 1장.
+      let ticketIds: string[] | null = null;
+      let reserveExpiresAt: string | null = null;
+      let ticketPositions: number[] = [];
+      if (hasTicketGrid) {
         if (selectedIds.length === 0) {
           throw new Error("자리를 1개 이상 선택해주세요");
         }
@@ -147,74 +108,22 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
           { method: "POST", body: JSON.stringify({ positions }) },
         );
         ticketIds = reserved.ticketIds;
-        setReservedTicketIds(reserved.ticketIds);
-        setReserveExpiresAt(new Date(reserved.reserveExpiresAt));
+        reserveExpiresAt = reserved.reserveExpiresAt;
+        ticketPositions = positions;
       }
 
-      const idempKey =
-        ticketIds && ticketIds.length > 0
-          ? `idemp:${kuji.id}:tickets:${ticketIds.join(",")}`
-          : `idemp:${kuji.id}:1`;
-      const key = sessionStorage.getItem(idempKey) ?? newIdempotencyKey();
-      sessionStorage.setItem(idempKey, key);
-
-      // 주소: 저장된 거 선택했고 새 입력 모드 아니면 addressId, 아니면 인라인.
-      const usingSaved =
-        !useNewAddress && selectedAddressId && (savedAddresses?.length ?? 0) > 0;
-      const addressPart = usingSaved
-        ? { addressId: selectedAddressId }
-        : {
-            shippingAddress: {
-              recipient, phone, postalCode, addressLine1,
-              addressLine2: addressLine2 || undefined,
-            },
-            saveAddress: saveNewAddress,
-          };
-
-      const orderPayload =
-        ticketIds && ticketIds.length > 0
-          ? { kujiEventId: kuji.id, ticketIds, ...addressPart }
-          : { kujiEventId: kuji.id, ticketCount: 1, ...addressPart };
-
-      const order = await api<OrderResponse>("/api/orders", {
-        method: "POST",
-        idempotencyKey: key,
-        body: JSON.stringify(orderPayload),
-      });
-
-      const intent = await api<IntentResponse>("/api/payments/intent", {
-        method: "POST",
-        body: JSON.stringify({ orderId: order.id }),
-      });
-
-      if (intent.provider === "toss") {
-        const toss = await loadTossPayments(intent.clientKey);
-        const origin = window.location.origin;
-        await toss.requestPayment("카드", {
-          amount: intent.amount,
-          orderId: intent.orderId,
-          orderName: intent.orderName,
-          successUrl: `${origin}/v2/payment/success`,
-          failUrl: `${origin}/v2/payment/fail`,
-        });
-      } else {
-        const providerTxId = "mock_tx_" + Math.random().toString(16).slice(2, 18);
-        await api("/api/payments/confirm", {
-          method: "POST",
-          body: JSON.stringify({
-            orderId: order.id,
-            paymentIntentId: intent.paymentIntentId,
-            signature: intent.signature,
-            providerTxId,
-          }),
-        });
-        router.push(`/v2/payment/success?orderId=${order.id}&mock=1`);
-      }
+      const payload = {
+        kujiId: kuji.id,
+        kujiTitle: kuji.title,
+        pricePerTicket: kuji.pricePerTicket,
+        ticketIds,
+        ticketPositions,
+        ticketCount: ticketIds?.length ?? 1,
+        reserveExpiresAt,
+      };
+      sessionStorage.setItem("lucky_draw.checkout", JSON.stringify(payload));
+      router.push("/v2/checkout");
     } catch (e) {
-      if (e instanceof ApiError && /not payable/i.test(e.message)) {
-        // 재결제 시도는 idempotency 키 초기화
-        sessionStorage.clear();
-      }
       if (e instanceof ApiError && e.status === 401) {
         router.replace(`/v2/login?next=/v2/kujis/${kuji.id}`);
         return;
@@ -313,69 +222,30 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
         </CardContent>
       </Card>
 
-      {/* Tiers — 등수별 카드. 각 카드 안에 모든 prizeItems 이미지 그리드. */}
+      {/* Tiers — 1등은 큰 카드, 나머지는 2~3열 컴팩트 카드. */}
       <Card className="mb-6">
         <CardContent className="p-6">
           <h2 className="font-bold flex items-center gap-2 mb-4">
             <Trophy className="h-5 w-5 text-[hsl(var(--kuji-gold))]" /> 경품 구성
           </h2>
-          <div className="space-y-4">
-            {kuji.prizeTiers.map((t) => {
-              const remaining = t.inventory?.remainingQuantity ?? 0;
-              const total = t.inventory?.totalQuantity ?? 0;
-              const items = t.prizeItems ?? [];
-              return (
-                <div
-                  key={t.id}
-                  className={`rounded-lg border overflow-hidden ${
-                    t.isLastPrize
-                      ? "border-[hsl(var(--kuji-gold))]/50 bg-gradient-to-br from-[hsl(var(--kuji-gold))]/10 to-transparent"
-                      : "border-border bg-muted/30"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/50">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Badge variant={t.isLastPrize ? "gold" : "secondary"} className="font-mono shrink-0 text-base px-2.5 py-0.5">
-                        {t.rank}등
-                      </Badge>
-                      <span className="font-bold truncate">{t.name}</span>
-                      {t.isLastPrize && <span className="text-[hsl(var(--kuji-gold))] font-bold shrink-0">🏆 라스트원</span>}
-                    </div>
-                    <span className="text-xs text-muted-foreground font-mono shrink-0">
-                      잔여 <span className="font-bold text-foreground">{remaining}</span> / {total}
-                    </span>
+          {(() => {
+            const tiers = kuji.prizeTiers;
+            const first = tiers[0];
+            if (!first) return null;
+            const rest = tiers.slice(1);
+            return (
+              <div className="space-y-3">
+                <BigTierCard tier={first} />
+                {rest.length > 0 && (
+                  <div className="grid gap-3 grid-cols-2">
+                    {rest.map((t) => (
+                      <CompactTierCard key={t.id} tier={t} />
+                    ))}
                   </div>
-
-                  {items.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3">
-                      {items.map((it) => (
-                        <div key={it.id} className="rounded-md overflow-hidden bg-background border">
-                          <div className="aspect-square relative bg-muted">
-                            {it.imageUrl ? (
-                              /* eslint-disable-next-line @next/next/no-img-element */
-                              <img src={it.imageUrl} alt={it.name} className="absolute inset-0 w-full h-full object-cover" />
-                            ) : (
-                              <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-                                <Trophy className="h-6 w-6" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="px-2 py-1.5">
-                            <div className="text-xs font-semibold leading-tight line-clamp-2">{it.name}</div>
-                            {it.description && (
-                              <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{it.description}</div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="px-4 py-3 text-xs text-muted-foreground">상세 상품 미공개</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                )}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -394,7 +264,7 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
               selectedIds={selectedIds}
               onToggle={toggle}
               maxSelect={5}
-              reserveExpiresAt={reserveExpiresAt}
+              reserveExpiresAt={null}
             />
             {ticketsErr && (
               <div className="mt-3 text-xs text-destructive">자리 정보 불러오기 실패: {ticketsErr}</div>
@@ -409,153 +279,170 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
         </Card>
       ) : (
         <Card>
-          <CardContent className="p-6">
-            <h2 className="font-bold flex items-center gap-2 mb-4">
-              <Ticket className="h-5 w-5 text-primary" /> 구매하기
+          <CardContent className="p-6 space-y-4">
+            <h2 className="font-bold flex items-center gap-2">
+              <Ticket className="h-5 w-5 text-primary" /> 주문 요약
             </h2>
-            <form onSubmit={buy} className="space-y-4">
-              {!hasTicketGrid && (
-                <div className="space-y-1.5">
-                  <Label>티켓 수량</Label>
-                  <p className="text-xs text-muted-foreground">
-                    자리 선택이 활성화되지 않은 쿠지입니다 — 1장 랜덤 추첨으로 진행됩니다.
-                    <span className="block mt-0.5">관리자에서 자리 셔플(Seed)을 실행하세요.</span>
-                  </p>
-                </div>
-              )}
-              {hasTicketGrid && (
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                  선택한 자리: <span className="font-mono font-bold">{selectedIds.length}</span>자리 · 결제 금액{" "}
-                  <span className="font-mono font-bold">
-                    {(kuji.pricePerTicket * Math.max(1, selectedIds.length)).toLocaleString()}원
-                  </span>
-                </div>
-              )}
-
-              <Separator />
-
-              <h3 className="font-bold flex items-center gap-2">
-                <Truck className="h-4 w-4 text-primary" /> 배송지
-              </h3>
-
-              {(() => {
-                const hasSaved = (savedAddresses?.length ?? 0) > 0;
-                const showSaved = hasSaved && !useNewAddress;
-
-                if (showSaved) {
-                  const cur = savedAddresses!.find((a) => a.id === selectedAddressId);
-                  return (
-                    <div className="space-y-2">
-                      <select
-                        className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-                        value={selectedAddressId ?? ""}
-                        onChange={(e) => setSelectedAddressId(e.target.value)}
-                      >
-                        {savedAddresses!.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.recipient} · {a.addressLine1}
-                            {a.isDefault ? " (기본)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                      {cur && (
-                        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">
-                          <div className="font-semibold">{cur.recipient} · {cur.phone}</div>
-                          <div className="text-muted-foreground">
-                            [{cur.postalCode}] {cur.addressLine1}
-                            {cur.addressLine2 ? ` ${cur.addressLine2}` : ""}
-                          </div>
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setUseNewAddress(true)}
-                        className="text-xs text-primary underline"
-                      >
-                        + 새 주소로 결제
-                      </button>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-1.5"><Label htmlFor="recipient">받는 분</Label><Input id="recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)} required maxLength={60} /></div>
-                      <div className="space-y-1.5"><Label htmlFor="phone">연락처</Label><Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} required maxLength={20} /></div>
-                      <div className="space-y-1.5"><Label htmlFor="postalCode">우편번호</Label><Input id="postalCode" value={postalCode} onChange={(e) => setPostalCode(e.target.value)} required maxLength={10} /></div>
-                      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="addressLine1">주소</Label><Input id="addressLine1" value={addressLine1} onChange={(e) => setAddressLine1(e.target.value)} required maxLength={200} /></div>
-                      <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="addressLine2">상세주소 <span className="text-muted-foreground font-normal">(선택)</span></Label><Input id="addressLine2" value={addressLine2} onChange={(e) => setAddressLine2(e.target.value)} maxLength={200} /></div>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={saveNewAddress}
-                        onChange={(e) => setSaveNewAddress(e.target.checked)}
-                        className="h-4 w-4 rounded border-input"
-                      />
-                      <span>다음 주문부터 자동 사용 (주소록에 저장)</span>
-                    </label>
-                    {hasSaved && (
-                      <button
-                        type="button"
-                        onClick={() => setUseNewAddress(false)}
-                        className="text-xs text-primary underline"
-                      >
-                        저장된 주소 사용하기
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
-
-              <div className="rounded-lg border border-[hsl(var(--kuji-gold))]/40 bg-[hsl(var(--kuji-gold))]/10 p-4">
-                <p className="font-bold flex items-center gap-2 text-sm">
-                  <AlertTriangle className="h-4 w-4 text-[hsl(var(--kuji-gold))]" /> 구매 전 확인
-                </p>
-                <ul className="mt-2 list-disc pl-5 text-sm space-y-1">
-                  <li>결제 즉시 자동 추첨이 진행되며, 결과는 변경할 수 없습니다.</li>
-                  <li><b>추첨 후 단순 변심에 의한 환불·교환은 불가</b>합니다. (상품 하자·오배송·중복결제 등 예외 케이스에 한해 고객센터 통해 처리)</li>
-                  <li>배송이 시작된 이후에는 환불 처리가 제한됩니다.</li>
-                </ul>
-                <label className="mt-3 flex items-center gap-2 cursor-pointer text-sm font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={agreeNoRefund}
-                    onChange={(e) => setAgreeNoRefund(e.target.checked)}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  <span>위 내용을 확인했으며 이에 동의합니다.</span>
-                </label>
+            {hasTicketGrid ? (
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                선택한 자리:{" "}
+                <span className="font-mono font-bold">{selectedIds.length}</span>자리 · 합계{" "}
+                <span className="font-mono font-bold">
+                  {(kuji.pricePerTicket * Math.max(1, selectedIds.length)).toLocaleString()}원
+                </span>
               </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                자리 선택이 활성화되지 않은 쿠지입니다 — 1장 랜덤 추첨으로 진행됩니다.
+                <span className="block mt-0.5">관리자에서 자리 셔플(Seed)을 실행하세요.</span>
+              </p>
+            )}
 
-              {err && (
-                <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {err}
-                </div>
-              )}
+            {err && (
+              <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {err}
+              </div>
+            )}
 
-              <Button
-                type="submit"
-                variant="kuji"
-                size="lg"
-                disabled={
-                  busy ||
-                  !agreeNoRefund ||
-                  (hasTicketGrid && selectedIds.length === 0 && !reservedTicketIds)
-                }
-                className="w-full"
-              >
-                {busy
-                  ? "처리 중..."
-                  : `${(
-                      kuji.pricePerTicket * Math.max(1, ticketCount || selectedIds.length)
-                    ).toLocaleString()}원 결제하기`}
-              </Button>
-            </form>
+            <Button
+              type="button"
+              variant="kuji"
+              size="lg"
+              disabled={busy || (hasTicketGrid && selectedIds.length === 0)}
+              onClick={proceedToCheckout}
+              className="w-full"
+            >
+              {busy ? "처리 중..." : "결제 페이지로 →"}
+            </Button>
+            <p className="text-[11px] text-center text-muted-foreground">
+              다음 단계: 배송지 입력 + 카드 결제 · 자리는 결제 페이지에서 5분간 점유됩니다.
+            </p>
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+type Tier = KujiDetailResponse["prizeTiers"][number];
+
+function BigTierCard({ tier }: { tier: Tier }) {
+  const remaining = tier.inventory?.remainingQuantity ?? 0;
+  const total = tier.inventory?.totalQuantity ?? 0;
+  const items = tier.prizeItems ?? [];
+  return (
+    <div
+      className={`rounded-lg border overflow-hidden ${
+        tier.isLastPrize
+          ? "border-[hsl(var(--kuji-gold))]/50 bg-gradient-to-br from-[hsl(var(--kuji-gold))]/10 to-transparent"
+          : "border-border bg-muted/30"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border/50">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant={tier.isLastPrize ? "gold" : "secondary"} className="font-mono shrink-0 text-base px-2.5 py-0.5">
+            {tier.rank}등
+          </Badge>
+          <span className="font-bold truncate">{tier.name}</span>
+          {tier.isLastPrize && <span className="text-[hsl(var(--kuji-gold))] font-bold shrink-0">🏆 라스트원</span>}
+        </div>
+        {!tier.isLastPrize && (
+          <span className="text-xs font-mono shrink-0">
+            잔여량 <span className="font-bold text-destructive">{remaining}</span>
+            <span className="text-muted-foreground">/{total}</span>
+          </span>
+        )}
+      </div>
+      {tier.isLastPrize ? (
+        <div className="px-4 py-3 border-b border-border/50 bg-[hsl(var(--kuji-gold))]/5 text-xs text-[hsl(var(--kuji-gold))] font-semibold">
+          🎁 마지막 한 장을 뽑는 사람에게 보너스로 지급됩니다 (자리에 박혀있지 않아요)
+        </div>
+      ) : (
+        <div className="px-4 py-3 border-b border-border/50 bg-background/40">
+          <TierInventoryGrid rank={tier.rank} total={total} remaining={remaining} isLastPrize={tier.isLastPrize} />
+        </div>
+      )}
+      {items.length > 0 ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3">
+          {items.map((it) => (
+            <div key={it.id} className="rounded-md overflow-hidden bg-background border">
+              <div className="aspect-square relative bg-muted">
+                {it.imageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={it.imageUrl} alt={it.name} className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+                    <Trophy className="h-6 w-6" />
+                  </div>
+                )}
+              </div>
+              <div className="px-2 py-1.5">
+                <div className="text-xs font-semibold leading-tight line-clamp-2">{it.name}</div>
+                {it.description && (
+                  <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{it.description}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="px-4 py-3 text-xs text-muted-foreground">상세 상품 미공개</div>
+      )}
+    </div>
+  );
+}
+
+function CompactTierCard({ tier }: { tier: Tier }) {
+  const remaining = tier.inventory?.remainingQuantity ?? 0;
+  const total = tier.inventory?.totalQuantity ?? 0;
+  const items = tier.prizeItems ?? [];
+  // 컴팩트 카드에선 첫 상품 1장만 대표 이미지로 노출.
+  const cover = items[0];
+  return (
+    <div
+      className={`flex flex-col rounded-lg border overflow-hidden ${
+        tier.isLastPrize
+          ? "border-[hsl(var(--kuji-gold))]/50 bg-gradient-to-br from-[hsl(var(--kuji-gold))]/10 to-transparent"
+          : "border-border bg-muted/30"
+      }`}
+    >
+      <div className="aspect-square relative bg-muted">
+        {cover?.imageUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={cover.imageUrl} alt={cover.name} className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+            <Trophy className="h-7 w-7" />
+          </div>
+        )}
+        <div className="absolute top-1.5 left-1.5">
+          <Badge variant={tier.isLastPrize ? "gold" : "secondary"} className="font-mono text-xs px-1.5 py-0">
+            {tier.rank}등
+          </Badge>
+        </div>
+      </div>
+      <div className="p-2.5 space-y-1.5">
+        <div className="text-xs font-bold leading-tight line-clamp-1">{tier.name}</div>
+        {tier.isLastPrize ? (
+          <div className="text-[10px] font-semibold text-[hsl(var(--kuji-gold))] leading-tight">
+            🎁 마지막 1명 보너스
+          </div>
+        ) : (
+          <>
+            <div className="text-[10px] font-mono">
+              잔여량 <span className="font-bold text-destructive">{remaining}</span>
+              <span className="text-muted-foreground">/{total}</span>
+            </div>
+            <TierInventoryGrid
+              rank={tier.rank}
+              total={total}
+              remaining={remaining}
+              isLastPrize={tier.isLastPrize}
+              size="compact"
+            />
+          </>
+        )}
+      </div>
     </div>
   );
 }

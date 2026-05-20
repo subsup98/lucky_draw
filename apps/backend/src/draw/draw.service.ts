@@ -254,6 +254,54 @@ export class DrawService {
           });
         }
 
+        // 라스트원 보너스 — 이 주문이 이벤트의 마지막 자리를 비웠다면 별도 DrawResult 1행 추가.
+        // 자리 등수와 무관하게 보너스로 지급되므로 ticketIndex 는 tickets.length+1.
+        const isLastOrder = await this.isLastPrizeOrder(
+          tx,
+          locked.kujiEventId,
+          orderId,
+        );
+        if (isLastOrder) {
+          const lastTier = await tx.prizeTier.findFirst({
+            where: { kujiEventId: locked.kujiEventId, isLastPrize: true },
+            select: {
+              id: true,
+              rank: true,
+              name: true,
+              animationPreset: true,
+              prizeItems: { select: { id: true }, take: 1 },
+            },
+          });
+          if (lastTier) {
+            const bonusIndex = tickets.length + 1;
+            const bonusItemId = lastTier.prizeItems[0]?.id ?? null;
+            await tx.drawResult.create({
+              data: {
+                orderId,
+                userId,
+                kujiEventId: locked.kujiEventId,
+                ticketIndex: bonusIndex,
+                prizeTierId: lastTier.id,
+                prizeItemId: bonusItemId,
+                seed: `${seedBase}:last-prize`,
+                snapshot: {
+                  algorithm: 'last-prize-bonus-v1',
+                  reason: 'final-purchase',
+                },
+              },
+            });
+            drawn.push({
+              ticketIndex: bonusIndex,
+              tierId: lastTier.id,
+              tierRank: lastTier.rank,
+              tierName: lastTier.name,
+              isLastPrize: true,
+              animationPreset: lastTier.animationPreset ?? null,
+              prizeItemId: bonusItemId,
+            });
+          }
+        }
+
         const updated = await tx.$executeRaw`
           UPDATE "Order"
              SET "status"='DRAWN', "drawnAt"=${new Date()}, "updatedAt"=${new Date()}

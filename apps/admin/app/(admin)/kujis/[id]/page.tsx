@@ -102,6 +102,7 @@ export default function KujiDetailPage() {
     description?: string;
     coverImageUrl?: string;
     pricePerTicket: number;
+    totalTickets: number;
     perUserLimit?: number | null;
     saleRange: [Dayjs, Dayjs];
   }>();
@@ -157,6 +158,7 @@ export default function KujiDetailPage() {
       description: detail.description ?? undefined,
       coverImageUrl: detail.coverImageUrl ?? undefined,
       pricePerTicket: detail.pricePerTicket,
+      totalTickets: detail.totalTickets,
       perUserLimit: detail.perUserLimit ?? undefined,
       saleRange: [dayjs(detail.saleStartAt), dayjs(detail.saleEndAt)],
     });
@@ -176,6 +178,7 @@ export default function KujiDetailPage() {
     };
     if (!saleStarted) {
       patch.pricePerTicket = v.pricePerTicket;
+      patch.totalTickets = v.totalTickets;
       patch.saleStartAt = v.saleRange[0].toISOString();
     }
     try {
@@ -467,6 +470,8 @@ export default function KujiDetailPage() {
         />
       </Card>
 
+      <SeatShuffleSection kujiId={detail.id} totalTickets={detail.totalTickets} />
+
       {/* 쿠지 수정 모달 */}
       <Modal
         title="쿠지 수정"
@@ -493,6 +498,14 @@ export default function KujiDetailPage() {
             rules={[{ required: true }]}
           >
             <InputNumber disabled={saleStarted} min={100} max={10_000_000} step={100} style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item
+            label={`총 자리 수 ${saleStarted ? "(판매 시작 후 수정 불가)" : "— 라스트원 외 등수 합과 같아야 함"}`}
+            name="totalTickets"
+            rules={[{ required: true }]}
+            tooltip="라스트원은 자리에 박히지 않고 마지막 주문에 보너스로 지급됩니다. 따라서 라스트원 totalQuantity 는 이 값에 포함하지 않습니다."
+          >
+            <InputNumber disabled={saleStarted} min={1} max={100_000} style={{ width: 200 }} />
           </Form.Item>
           <Form.Item label="1인당 한도" name="perUserLimit">
             <InputNumber min={1} max={1000} style={{ width: 160 }} />
@@ -624,5 +637,251 @@ export default function KujiDetailPage() {
         />
       </Modal>
     </Space>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 자리 셔플(Seed) 섹션 — 운영자가 자리별 prizeTier 분포를 보고 셔플/재셔플.
+// ---------------------------------------------------------------------------
+
+type AdminTicket = {
+  id: string;
+  position: number;
+  status: "AVAILABLE" | "RESERVED" | "SOLD";
+  prizeTier: { id: string; rank: string; name: string; isLastPrize: boolean };
+  prizeItem: { id: string; name: string } | null;
+};
+
+// 등수별 색상 — A/B/C/D/E 까지는 명시, 나머지는 회색 계열.
+const TIER_COLOR: Record<string, string> = {
+  A: "#dc2626",
+  B: "#ea580c",
+  C: "#ca8a04",
+  D: "#16a34a",
+  E: "#0891b2",
+  F: "#2563eb",
+  G: "#7c3aed",
+};
+
+function tierColor(rank: string, isLastPrize: boolean): string {
+  if (isLastPrize) return "#a16207"; // 황금 톤
+  return TIER_COLOR[rank?.[0] ?? ""] ?? "#737373";
+}
+
+function SeatShuffleSection({
+  kujiId,
+  totalTickets,
+}: {
+  kujiId: string;
+  totalTickets: number;
+}) {
+  const { message, modal } = App.useApp();
+  const [tickets, setTickets] = useState<AdminTicket[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [hoverPos, setHoverPos] = useState<number | null>(null);
+
+  async function reload() {
+    setLoading(true);
+    try {
+      const res = await api<AdminTicket[]>(`/api/admin/kujis/${kujiId}/tickets`);
+      setTickets(res);
+    } catch (e) {
+      message.error(e instanceof ApiError ? e.message : "조회 실패");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kujiId]);
+
+  async function seed() {
+    setBusy(true);
+    try {
+      await api(`/api/admin/kujis/${kujiId}/tickets/seed`, { method: "POST" });
+      message.success("자리 셔플 완료");
+      await reload();
+    } catch (e) {
+      message.error(e instanceof ApiError ? e.message : "셔플 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reshuffle() {
+    modal.confirm({
+      title: "자리 재셔플",
+      content:
+        "기존 자리 배치를 모두 폐기하고 새로 셔플합니다. 판매·점유된 자리가 1건이라도 있으면 실패합니다. 계속할까요?",
+      okText: "재셔플",
+      cancelText: "취소",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBusy(true);
+        try {
+          await api(`/api/admin/kujis/${kujiId}/tickets/reshuffle`, { method: "POST" });
+          message.success("재셔플 완료");
+          await reload();
+        } catch (e) {
+          message.error(e instanceof ApiError ? e.message : "재셔플 실패");
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  }
+
+  const seeded = (tickets?.length ?? 0) > 0;
+  const soldCount = tickets?.filter((t) => t.status === "SOLD").length ?? 0;
+  const reservedCount = tickets?.filter((t) => t.status === "RESERVED").length ?? 0;
+  const canReshuffle = seeded && soldCount === 0 && reservedCount === 0;
+
+  // 등수별 집계
+  const tierAgg = (() => {
+    if (!tickets) return [] as Array<{ rank: string; name: string; total: number; sold: number; isLastPrize: boolean }>;
+    const map = new Map<string, { rank: string; name: string; total: number; sold: number; isLastPrize: boolean }>();
+    for (const t of tickets) {
+      const k = t.prizeTier.id;
+      const cur = map.get(k);
+      if (cur) {
+        cur.total += 1;
+        if (t.status === "SOLD") cur.sold += 1;
+      } else {
+        map.set(k, {
+          rank: t.prizeTier.rank,
+          name: t.prizeTier.name,
+          isLastPrize: t.prizeTier.isLastPrize,
+          total: 1,
+          sold: t.status === "SOLD" ? 1 : 0,
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => (a.rank > b.rank ? 1 : -1));
+  })();
+
+  const hovered = hoverPos !== null ? tickets?.find((t) => t.position === hoverPos) : null;
+
+  return (
+    <Card
+      title="자리 셔플 (Seed)"
+      extra={
+        <Space>
+          {!seeded ? (
+            <Button type="primary" loading={busy} onClick={seed}>
+              자리 셔플 (Seed)
+            </Button>
+          ) : (
+            <Button danger loading={busy} disabled={!canReshuffle} onClick={reshuffle}>
+              자리 재셔플
+            </Button>
+          )}
+        </Space>
+      }
+    >
+      <div
+        style={{
+          padding: "8px 12px",
+          marginBottom: 12,
+          background: "#fef3c7",
+          border: "1px solid #fbbf24",
+          borderRadius: 4,
+          fontSize: 12,
+          color: "#78350f",
+        }}
+      >
+        🏆 <b>라스트원 등수는 자리에 박히지 않습니다.</b> 마지막 자리를 비우는 주문에 보너스로 자동 지급되므로,
+        자리 셔플은 라스트원을 제외한 등수만 배정합니다. 따라서 총 자리 수(totalTickets) = 라스트원 외 등수들의 totalQuantity 합 이어야 해요.
+      </div>
+
+      {!seeded && !loading && (
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+          아직 자리가 만들어지지 않았어요. "자리 셔플" 을 눌러 {totalTickets}개의 자리를 생성하세요.
+        </Typography.Paragraph>
+      )}
+
+      {loading && (
+        <div style={{ minHeight: 120, display: "grid", placeItems: "center" }}>
+          <Spin />
+        </div>
+      )}
+
+      {seeded && !loading && (
+        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+          <Space wrap size={[8, 8]}>
+            {tierAgg.map((t) => (
+              <Tag key={t.rank} color={tierColor(t.rank, t.isLastPrize)} style={{ color: "#fff" }}>
+                {t.isLastPrize ? "라" : t.rank} · {t.name} · {t.total - t.sold}/{t.total}
+              </Tag>
+            ))}
+            <Tag>판매 {soldCount}</Tag>
+            <Tag color="blue">점유 {reservedCount}</Tag>
+          </Space>
+
+          {!canReshuffle && (
+            <Typography.Text type="warning" style={{ fontSize: 12 }}>
+              ⚠ 판매/점유된 자리가 있어 재셔플 불가. (운영 중 결과 변경 방지)
+            </Typography.Text>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(28px, 1fr))",
+              gap: 4,
+            }}
+          >
+            {tickets!.map((t) => {
+              const bg = tierColor(t.prizeTier.rank, t.prizeTier.isLastPrize);
+              const isSold = t.status === "SOLD";
+              const isReserved = t.status === "RESERVED";
+              return (
+                <div
+                  key={t.id}
+                  title={`#${t.position} · ${t.prizeTier.rank}등 ${t.prizeTier.name}${
+                    t.prizeItem ? ` · ${t.prizeItem.name}` : ""
+                  } · ${t.status}`}
+                  onMouseEnter={() => setHoverPos(t.position)}
+                  onMouseLeave={() => setHoverPos(null)}
+                  style={{
+                    aspectRatio: "1 / 1",
+                    background: bg,
+                    color: "#fff",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: 3,
+                    opacity: isSold ? 0.45 : isReserved ? 0.75 : 1,
+                    outline: isSold
+                      ? "1.5px solid #171717"
+                      : isReserved
+                        ? "1.5px dashed #1d4ed8"
+                        : "none",
+                    cursor: "default",
+                  }}
+                >
+                  {t.prizeTier.isLastPrize ? "라" : (t.prizeTier.rank?.[0] ?? "?")}
+                </div>
+              );
+            })}
+          </div>
+
+          {hovered && (
+            <Typography.Text style={{ fontSize: 12 }}>
+              자리 #{hovered.position} → <b>{hovered.prizeTier.rank}등 {hovered.prizeTier.name}</b>
+              {hovered.prizeItem ? ` (${hovered.prizeItem.name})` : ""} · {hovered.status}
+            </Typography.Text>
+          )}
+
+          <Typography.Paragraph type="secondary" style={{ fontSize: 11, marginBottom: 0 }}>
+            셀 색상 = 등수. 검정 외곽선 = 판매됨, 파랑 점선 = 점유. 마우스를 올리면 자리 정보가 표시됩니다.
+          </Typography.Paragraph>
+        </Space>
+      )}
+    </Card>
   );
 }

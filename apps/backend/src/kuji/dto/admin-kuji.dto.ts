@@ -84,6 +84,12 @@ export class UpdateKujiDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(100_000)
+  totalTickets?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   @Max(1000)
   perUserLimit?: number;
 

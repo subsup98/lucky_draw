@@ -162,6 +162,22 @@ export class AdminKujiController {
       }
       data.pricePerTicket = dto.pricePerTicket;
     }
+    if (dto.totalTickets !== undefined) {
+      if (saleHasStarted) {
+        throw new ConflictException('cannot change totalTickets after tickets sold');
+      }
+      // 자리가 점유/판매된 상태에서 totalTickets 를 바꾸면 정합성이 깨진다.
+      // (이미 박힌 자리 수와 새 totalTickets 가 안 맞음) — SOLD/RESERVED 0건일 때만 허용.
+      const blocking = await this.prisma.ticket.count({
+        where: { kujiEventId: id, status: { in: ['SOLD', 'RESERVED'] } },
+      });
+      if (blocking > 0) {
+        throw new ConflictException(
+          'cannot change totalTickets while seats are SOLD/RESERVED — release them first',
+        );
+      }
+      data.totalTickets = dto.totalTickets;
+    }
     if (dto.saleStartAt !== undefined) {
       if (saleHasStarted) {
         throw new ConflictException('cannot change saleStartAt after tickets sold');
@@ -240,6 +256,10 @@ export class AdminKujiController {
         where: { kujiEventId: id, isLastPrize: true },
       });
       if (existing) throw new ConflictException('last-prize tier already exists');
+      // 라스트원은 마지막 1명에게 보너스 — 항상 정확히 1개.
+      if (dto.totalQuantity !== 1) {
+        throw new BadRequestException('last-prize tier must have totalQuantity = 1');
+      }
     }
 
     try {
@@ -319,6 +339,12 @@ export class AdminKujiController {
           where: { kujiEventId: tier.kujiEventId, isLastPrize: true, NOT: { id: tierId } },
         });
         if (existing) throw new ConflictException('last-prize tier already exists');
+        // 라스트원으로 전환할 땐 totalQuantity 가 1이어야 한다.
+        if (tier.totalQuantity !== 1) {
+          throw new BadRequestException(
+            'last-prize tier must have totalQuantity = 1 — adjust inventory first',
+          );
+        }
       }
       data.isLastPrize = dto.isLastPrize;
     }

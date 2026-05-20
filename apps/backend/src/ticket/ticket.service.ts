@@ -230,34 +230,8 @@ export class TicketService {
         );
       }
 
-      const tierSum = event.prizeTiers.reduce(
-        (s, t) => s + t.totalQuantity,
-        0,
-      );
-      if (tierSum !== event.totalTickets) {
-        throw new BadRequestException(
-          `tier 총합 ${tierSum} != totalTickets ${event.totalTickets}`,
-        );
-      }
-
-      // tier/item 분배 배열 생성: 각 자리에 (tierId, itemId?) 할당
-      const slots: Array<{ tierId: string; itemId: string | null }> = [];
-      for (const t of event.prizeTiers) {
-        for (let i = 0; i < t.totalQuantity; i++) {
-          // tier 안에 PrizeItem 이 여러 개면 라운드로빈
-          const item =
-            t.prizeItems.length > 0
-              ? t.prizeItems[i % t.prizeItems.length]!
-              : null;
-          slots.push({
-            tierId: t.id,
-            itemId: item?.id ?? null,
-          });
-        }
-      }
-
-      // Fisher-Yates 셔플 (crypto 시드)
-      this.shuffleInPlace(slots);
+      this.validateForSlots(event);
+      const slots = this.buildSlots(event);
 
       // 일괄 insert
       const now = new Date();
@@ -273,6 +247,124 @@ export class TicketService {
       await tx.ticket.createMany({ data: rows });
       this.logger.log(`seedForKuji: ${rows.length} tickets created for ${kujiEventId}`);
       return { created: rows.length };
+    });
+  }
+
+  /**
+   * 자리 생성 검증.
+   * - 라스트원 등수는 자리 배정 풀에서 제외 (마지막 주문에 보너스로 별도 지급)
+   * - 라스트원 외 등수들의 totalQuantity 합 == event.totalTickets
+   * - 라스트원 등수의 totalQuantity 는 1 강제
+   */
+  private validateForSlots(event: {
+    totalTickets: number;
+    prizeTiers: Array<{ totalQuantity: number; isLastPrize: boolean }>;
+  }) {
+    for (const lt of event.prizeTiers.filter((t) => t.isLastPrize)) {
+      if (lt.totalQuantity !== 1) {
+        throw new BadRequestException('라스트원 티어 totalQuantity 는 1이어야 합니다');
+      }
+    }
+    const nonLastSum = event.prizeTiers
+      .filter((t) => !t.isLastPrize)
+      .reduce((s, t) => s + t.totalQuantity, 0);
+    if (nonLastSum !== event.totalTickets) {
+      throw new BadRequestException(
+        `라스트원 외 tier 합 ${nonLastSum} != totalTickets ${event.totalTickets}`,
+      );
+    }
+  }
+
+  private buildSlots(event: {
+    prizeTiers: Array<{
+      id: string;
+      totalQuantity: number;
+      isLastPrize: boolean;
+      prizeItems: Array<{ id: string }>;
+    }>;
+  }): Array<{ tierId: string; itemId: string | null }> {
+    const slots: Array<{ tierId: string; itemId: string | null }> = [];
+    for (const t of event.prizeTiers) {
+      // 라스트원은 자리 배정에서 제외 — 마지막 주문에게 보너스로만 지급.
+      if (t.isLastPrize) continue;
+      for (let i = 0; i < t.totalQuantity; i++) {
+        const item =
+          t.prizeItems.length > 0
+            ? t.prizeItems[i % t.prizeItems.length]!
+            : null;
+        slots.push({ tierId: t.id, itemId: item?.id ?? null });
+      }
+    }
+    this.shuffleInPlace(slots);
+    return slots;
+  }
+
+  /**
+   * 운영자용 자리 맵 — 모든 자리의 position / status / tier 를 노출.
+   * 일반 사용자 listGrid 와 달리 AVAILABLE/RESERVED 도 prizeTier 를 함께 돌려준다.
+   */
+  async adminListGrid(kujiEventId: string) {
+    const tickets = await this.prisma.ticket.findMany({
+      where: { kujiEventId },
+      orderBy: { position: 'asc' },
+      select: {
+        id: true,
+        position: true,
+        status: true,
+        prizeTier: { select: { id: true, rank: true, name: true, isLastPrize: true } },
+        prizeItem: { select: { id: true, name: true } },
+      },
+    });
+    return tickets;
+  }
+
+  /**
+   * 재셔플 — 아직 판매(SOLD)나 점유(RESERVED)가 하나도 없을 때만 가능.
+   * 운영 도중 결과가 바뀌는 사고를 막기 위한 가드.
+   */
+  async reshuffleForKuji(kujiEventId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const event = await tx.kujiEvent.findUnique({
+        where: { id: kujiEventId },
+        select: {
+          totalTickets: true,
+          prizeTiers: { include: { prizeItems: { select: { id: true } } } },
+        },
+      });
+      if (!event) throw new NotFoundException('kuji not found');
+
+      const blocking = await tx.ticket.count({
+        where: {
+          kujiEventId,
+          status: { in: [TicketStatus.SOLD, TicketStatus.RESERVED] },
+        },
+      });
+      if (blocking > 0) {
+        throw new ConflictException(
+          `이미 판매/점유된 자리가 ${blocking}개 있어 재셔플 불가`,
+        );
+      }
+
+      this.validateForSlots(event);
+
+      // 기존 ticket 행 모두 삭제 후 재셔플.
+      await tx.ticket.deleteMany({ where: { kujiEventId } });
+
+      const slots = this.buildSlots(event);
+
+      const now = new Date();
+      const rows = slots.map((s, idx) => ({
+        kujiEventId,
+        position: idx + 1,
+        prizeTierId: s.tierId,
+        prizeItemId: s.itemId,
+        status: TicketStatus.AVAILABLE,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      await tx.ticket.createMany({ data: rows });
+      this.logger.log(`reshuffleForKuji: ${rows.length} tickets re-created for ${kujiEventId}`);
+      return { reshuffled: rows.length };
     });
   }
 
