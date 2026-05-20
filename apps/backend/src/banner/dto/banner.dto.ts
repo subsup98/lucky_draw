@@ -26,6 +26,11 @@ export class CreateBannerDto {
   linkUrl?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  ctaLabel?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(1000)
@@ -69,6 +74,11 @@ export class UpdateBannerDto {
   @IsString()
   @MaxLength(500)
   linkUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  ctaLabel?: string | null;
 
   @IsOptional()
   @IsInt()

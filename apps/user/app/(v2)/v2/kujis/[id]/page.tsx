@@ -8,6 +8,9 @@ import { api, ApiError, newIdempotencyKey } from "@/app/lib/api";
 import type { IntentResponse, OrderResponse } from "@/app/lib/types";
 import { V2Header } from "../../../components/v2-header";
 import { TicketGrid, type TicketCell } from "../../../components/ticket-grid";
+import { TopRibbonBanner } from "../../../components/top-ribbon-banner";
+import type { CarouselBanner } from "../../../components/banner-carousel";
+import { usePreviewBanner } from "../../../lib/preview-banner";
 
 // API가 실제로 반환하는 detail 응답 형태 (kuji.service.ts#detail).
 // `tiers` 가 아니라 `prizeTiers` 이고, inventory 는 totalQuantity/remainingQuantity.
@@ -44,6 +47,9 @@ import { Separator } from "@/components/ui/separator";
 export default function KujiDetailPageV2({ params }: { params: { id: string } }) {
   const router = useRouter();
   const [kuji, setKuji] = useState<KujiDetailResponse | null>(null);
+  const [topRibbons, setTopRibbons] = useState<CarouselBanner[]>([]);
+  const previewTopRibbon = usePreviewBanner("KUJI_DETAIL_TOP");
+  const topRibbon = previewTopRibbon ?? topRibbons[0] ?? null;
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -83,6 +89,9 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
     api<KujiDetailResponse>(`/api/kujis/${params.id}`)
       .then(setKuji)
       .catch((e) => setErr(e instanceof ApiError ? e.message : "failed"));
+    api<CarouselBanner[]>("/api/banners?placement=KUJI_DETAIL_TOP")
+      .then(setTopRibbons)
+      .catch(() => setTopRibbons([]));
   }, [params.id]);
 
   const loadTickets = useCallback(() => {
@@ -247,6 +256,11 @@ export default function KujiDetailPageV2({ params }: { params: { id: string } })
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-6 md:px-6">
+      {topRibbon && (
+        <div className="-mx-4 md:-mx-6 mb-4">
+          <TopRibbonBanner banner={topRibbon} />
+        </div>
+      )}
       <V2Header back="/v2" backLabel="홈" />
 
       {/* Hero */}

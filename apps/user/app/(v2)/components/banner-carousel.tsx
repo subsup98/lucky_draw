@@ -10,6 +10,7 @@ export interface CarouselBanner {
   body?: string | null;
   imageUrl?: string | null;
   linkUrl?: string | null;
+  ctaLabel?: string | null;
 }
 
 interface Props {
@@ -70,6 +71,12 @@ export function BannerCarousel({ banners, intervalMs = 10000, pauseOnHover = tru
             <p className="mt-1 text-sm md:text-base text-primary-foreground/90 line-clamp-2 max-w-2xl drop-shadow">
               {b.body}
             </p>
+          )}
+          {b.ctaLabel && (
+            <span className="mt-3 inline-flex items-center gap-1 rounded-full bg-white/95 px-4 py-2 text-sm font-bold text-foreground shadow-lg">
+              {b.ctaLabel}
+              <ChevronRight className="h-4 w-4" />
+            </span>
           )}
         </div>
       </div>

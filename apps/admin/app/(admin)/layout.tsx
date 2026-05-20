@@ -16,6 +16,7 @@ const items = [
   { key: "/notices", label: "공지 관리" },
   { key: "/inquiries", label: "문의 관리" },
   { key: "/banners", label: "배너 관리" },
+  { key: "/content", label: "콘텐츠 관리" },
   { key: "/settings", label: "사이트 설정" },
   { key: "/audit-logs", label: "감사 로그" },
 ];

@@ -56,6 +56,7 @@ export class AdminBannerController {
         body: dto.body ?? null,
         imageUrl: dto.imageUrl ?? null,
         linkUrl: dto.linkUrl ?? null,
+        ctaLabel: dto.ctaLabel ?? null,
         priority: dto.priority ?? 0,
         isActive: dto.isActive ?? true,
         startAt: dto.startAt ? new Date(dto.startAt) : null,
@@ -90,6 +91,7 @@ export class AdminBannerController {
     if (dto.body !== undefined) data.body = dto.body;
     if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
     if (dto.linkUrl !== undefined) data.linkUrl = dto.linkUrl;
+    if (dto.ctaLabel !== undefined) data.ctaLabel = dto.ctaLabel;
     if (dto.priority !== undefined) data.priority = dto.priority;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
     if (dto.startAt !== undefined) {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Sparkles, Ticket, Trophy, ChevronRight, Bell, MessageCircle, User, LogIn } from "lucide-react";
+import { Trophy, ChevronRight, Bell, MessageCircle, User, LogIn } from "lucide-react";
 import { api, ApiError } from "@/app/lib/api";
 import type { KujiSummary } from "@/app/lib/types";
 import { Button } from "@/components/ui/button";
@@ -11,21 +11,60 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThemeToggle } from "../components/theme-toggle";
 import { BannerCarousel, type CarouselBanner } from "../components/banner-carousel";
+import { SideBanner } from "../components/side-banner";
+import { PopupBanner } from "../components/popup-banner";
+import { usePreviewBanner } from "../lib/preview-banner";
+
+const CONTENT_DEFAULTS = {
+  "v2.kuji.heading": "진행 중인 쿠지",
+  "v2.kuji.subtitle": "A상부터 라스트원까지, 모든 등수가 준비되어 있어요.",
+  "v2.footer.text": "© {year} lucky_draw · v2 preview",
+};
 
 export default function HomePageV2() {
   const [kujis, setKujis] = useState<KujiSummary[] | null>(null);
-  const [banners, setBanners] = useState<CarouselBanner[]>([]);
+  const [heroes, setHeroes] = useState<CarouselBanner[]>([]);
+  const [sides, setSides] = useState<CarouselBanner[]>([]);
+  const [popups, setPopups] = useState<CarouselBanner[]>([]);
+  const [content, setContent] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
+
+  const previewHero = usePreviewBanner("MAIN_HERO");
+  const previewSide = usePreviewBanner("MAIN_SIDE");
+  const previewPopup = usePreviewBanner("POPUP");
+
+  const t = (key: keyof typeof CONTENT_DEFAULTS): string =>
+    content[key] ?? CONTENT_DEFAULTS[key];
 
   useEffect(() => {
     api<KujiSummary[]>("/api/kujis")
       .then(setKujis)
       .catch((e) => setErr(e instanceof ApiError ? e.message : "failed"));
-    // 배너 실패는 메인 흐름 영향 없음 — 조용히 무시.
     api<CarouselBanner[]>("/api/banners?placement=MAIN_HERO")
-      .then(setBanners)
-      .catch(() => setBanners([]));
+      .then(setHeroes)
+      .catch(() => setHeroes([]));
+    api<CarouselBanner[]>("/api/banners?placement=MAIN_SIDE")
+      .then(setSides)
+      .catch(() => setSides([]));
+    api<CarouselBanner[]>("/api/banners?placement=POPUP")
+      .then(setPopups)
+      .catch(() => setPopups([]));
+    api<Record<string, unknown>>("/api/site-config/public")
+      .then((cfg) => {
+        const next: Record<string, string> = {};
+        for (const k of Object.keys(cfg)) {
+          if (typeof cfg[k] === "string") next[k] = cfg[k] as string;
+        }
+        setContent(next);
+      })
+      .catch(() => {});
   }, []);
+
+  const heroBanners: CarouselBanner[] = previewHero
+    ? [previewHero, ...heroes.filter((b) => b.id !== previewHero.id)]
+    : heroes;
+  const sideBanner = previewSide ?? sides[0] ?? null;
+  const popupBanner = previewPopup ?? popups[0] ?? null;
 
   return (
     <div className="relative overflow-hidden">
@@ -68,58 +107,26 @@ export default function HomePageV2() {
           </nav>
         </header>
 
-        {banners.length > 0 && <BannerCarousel banners={banners} />}
+        <div className="mb-6">
+          {heroBanners.length > 0 && <BannerCarousel banners={heroBanners} />}
+        </div>
 
-        <section className="relative mb-10 overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-secondary p-6 md:p-10 shadow-lg">
-          <div
-            className="absolute inset-0 opacity-30"
-            style={{
-              backgroundImage:
-                "linear-gradient(110deg, transparent 30%, hsl(var(--kuji-gold) / 0.15) 50%, transparent 70%)",
-              backgroundSize: "200% 100%",
-              animation: "shimmer 4s linear infinite",
-            }}
-          />
-          <div className="relative grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
-            <div>
-              <Badge variant="gold" className="mb-3">
-                <Sparkles className="mr-1 h-3 w-3" /> 매주 신상 입고
-              </Badge>
-              <h1 className="font-black text-4xl md:text-5xl leading-[1.1] tracking-tight">
-                오늘은 <span className="bg-gradient-to-r from-[hsl(var(--kuji-red))] to-[hsl(var(--kuji-gold))] bg-clip-text text-transparent">어떤 행운</span>이<br />
-                기다리고 있을까?
-              </h1>
-              <p className="mt-3 text-muted-foreground md:text-lg">
-                꽝 없는 이치방쿠지. 한 장 한 장이 모두 당첨입니다.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="kuji" size="lg" asChild>
-                <a href="#kuji-list">
-                  <Ticket /> 지금 뽑기
-                </a>
-              </Button>
-            </div>
+        {sideBanner && (
+          <div className="mb-10">
+            <SideBanner banner={sideBanner} />
           </div>
+        )}
 
-          <div className="absolute -right-2 top-4 hidden md:block">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-[hsl(var(--kuji-red))] text-[hsl(var(--kuji-red))] font-black text-xs animate-stamp-in"
-                 style={{ transform: "rotate(-12deg)" }}>
-              <div className="text-center leading-tight">
-                NO<br />MISS<br />ALL HIT
-              </div>
-            </div>
-          </div>
-        </section>
+        {popupBanner && <PopupBanner banner={popupBanner} isPreview={!!previewPopup} />}
 
         <section id="kuji-list">
           <div className="flex items-end justify-between mb-5">
             <div>
               <h2 className="text-2xl font-black tracking-tight flex items-center gap-2">
-                <Trophy className="h-6 w-6 text-[hsl(var(--kuji-gold))]" /> 진행 중인 쿠지
+                <Trophy className="h-6 w-6 text-[hsl(var(--kuji-gold))]" /> {t("v2.kuji.heading")}
               </h2>
               <p className="text-sm text-muted-foreground mt-1">
-                A상부터 라스트원까지, 모든 등수가 준비되어 있어요.
+                {t("v2.kuji.subtitle")}
               </p>
             </div>
           </div>
@@ -242,7 +249,7 @@ export default function HomePageV2() {
         </section>
 
         <footer className="mt-16 pt-8 border-t text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} lucky_draw · v2 preview
+          {t("v2.footer.text").replace("{year}", String(new Date().getFullYear()))}
         </footer>
       </div>
     </div>

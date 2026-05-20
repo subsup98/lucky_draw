@@ -403,6 +403,7 @@ model Banner {
   body        String?
   imageUrl    String?
   linkUrl     String?
+  ctaLabel    String?
   priority    Int             @default(0)   // 내림차순 정렬 (큰 값이 위)
   isActive    Boolean         @default(true)
   startAt     DateTime?

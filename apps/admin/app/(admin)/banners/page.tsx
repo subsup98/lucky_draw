@@ -22,6 +22,7 @@ import type { ColumnsType } from "antd/es/table";
 import dayjs, { Dayjs } from "dayjs";
 import { api, ApiError } from "../../lib/api";
 import { ImageUploaderField } from "../../components/ImageUploader";
+import { LivePagePreview } from "./preview";
 
 type Placement = "MAIN_HERO" | "MAIN_SIDE" | "KUJI_DETAIL_TOP" | "POPUP";
 
@@ -32,6 +33,7 @@ type Banner = {
   body: string | null;
   imageUrl: string | null;
   linkUrl: string | null;
+  ctaLabel: string | null;
   priority: number;
   isActive: boolean;
   startAt: string | null;
@@ -60,10 +62,34 @@ type FormValues = {
   body?: string;
   imageUrl?: string;
   linkUrl?: string;
+  ctaLabel?: string;
   priority: number;
   isActive: boolean;
   range?: [Dayjs | null, Dayjs | null];
 };
+
+function PreviewPanel({ form }: { form: ReturnType<typeof Form.useForm<FormValues>>[0] }) {
+  const placement = Form.useWatch("placement", form) ?? "MAIN_HERO";
+  const title = Form.useWatch("title", form);
+  const body = Form.useWatch("body", form);
+  const imageUrl = Form.useWatch("imageUrl", form);
+  const linkUrl = Form.useWatch("linkUrl", form);
+  const ctaLabel = Form.useWatch("ctaLabel", form);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <Typography.Text strong style={{ fontSize: 13 }}>
+        실시간 미리보기 — 사용자 페이지
+      </Typography.Text>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+        입력값이 바뀌면 아래 사이트 미리보기에 즉시 반영됩니다. 아직 저장된 상태가 아닙니다.
+      </Typography.Paragraph>
+      <LivePagePreview
+        placement={placement}
+        draft={{ title, body, imageUrl, linkUrl, ctaLabel }}
+      />
+    </div>
+  );
+}
 
 export default function AdminBannersPage() {
   const { message } = App.useApp();
@@ -112,6 +138,7 @@ export default function AdminBannersPage() {
       body: b.body ?? undefined,
       imageUrl: b.imageUrl ?? undefined,
       linkUrl: b.linkUrl ?? undefined,
+      ctaLabel: b.ctaLabel ?? undefined,
       priority: b.priority,
       isActive: b.isActive,
       range: [b.startAt ? dayjs(b.startAt) : null, b.endAt ? dayjs(b.endAt) : null],
@@ -127,6 +154,7 @@ export default function AdminBannersPage() {
       body: v.body ?? null,
       imageUrl: v.imageUrl ?? null,
       linkUrl: v.linkUrl ?? null,
+      ctaLabel: v.ctaLabel ?? null,
       priority: v.priority,
       isActive: v.isActive,
       startAt: v.range?.[0]?.toISOString() ?? null,
@@ -281,39 +309,52 @@ export default function AdminBannersPage() {
         confirmLoading={saving}
         okText={editing ? "저장" : "생성"}
         cancelText="취소"
-        width={640}
+        destroyOnClose
+        width={1180}
       >
-        <Form form={form} layout="vertical">
-          <Form.Item label="위치" name="placement" rules={[{ required: true }]}>
-            <Select
-              options={(Object.keys(PLACEMENT_LABEL) as Placement[]).map((p) => ({
-                value: p,
-                label: PLACEMENT_LABEL[p],
-              }))}
-            />
-          </Form.Item>
-          <Form.Item label="제목" name="title" rules={[{ required: true, max: 200 }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item label="본문 (선택)" name="body" rules={[{ max: 2000 }]}>
-            <Input.TextArea rows={3} maxLength={2000} showCount />
-          </Form.Item>
-          <Form.Item label="이미지" name="imageUrl" rules={[{ max: 500 }]}>
-            <ImageUploaderField width={400} height={225} aspect={16 / 9} aspectLabel="16:9" />
-          </Form.Item>
-          <Form.Item label="링크 URL (선택)" name="linkUrl" rules={[{ max: 500 }]}>
-            <Input placeholder="/kujis/... 또는 https://..." />
-          </Form.Item>
-          <Form.Item label="우선순위 (큰 값이 위)" name="priority" rules={[{ required: true }]}>
-            <InputNumber min={0} max={1000} />
-          </Form.Item>
-          <Form.Item label="노출 기간 (선택, 비우면 상시)" name="range">
-            <DatePicker.RangePicker showTime style={{ width: "100%" }} allowEmpty={[true, true]} />
-          </Form.Item>
-          <Form.Item name="isActive" valuePropName="checked" label="활성">
-            <Switch />
-          </Form.Item>
-        </Form>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 560px", gap: 20 }}>
+          <Form form={form} layout="vertical">
+            <Form.Item label="위치" name="placement" rules={[{ required: true }]}>
+              <Select
+                options={(Object.keys(PLACEMENT_LABEL) as Placement[]).map((p) => ({
+                  value: p,
+                  label: PLACEMENT_LABEL[p],
+                }))}
+              />
+            </Form.Item>
+            <Form.Item label="제목" name="title" rules={[{ required: true, max: 200 }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item label="본문 (선택)" name="body" rules={[{ max: 2000 }]}>
+              <Input.TextArea rows={3} maxLength={2000} showCount />
+            </Form.Item>
+            <Form.Item label="이미지" name="imageUrl" rules={[{ max: 500 }]}>
+              <ImageUploaderField width={400} height={225} aspect={16 / 9} aspectLabel="16:9" />
+            </Form.Item>
+            <Form.Item label="링크 URL (선택)" name="linkUrl" rules={[{ max: 500 }]}>
+              <Input placeholder="/kujis/... 또는 https://..." />
+            </Form.Item>
+            <Form.Item
+              label="버튼 라벨 (선택)"
+              name="ctaLabel"
+              rules={[{ max: 40 }]}
+              tooltip="비우면 버튼이 표시되지 않습니다. 배너 클릭은 위의 링크 URL로 이동합니다."
+            >
+              <Input placeholder="예: 지금 뽑기" maxLength={40} showCount />
+            </Form.Item>
+            <Form.Item label="우선순위 (큰 값이 위)" name="priority" rules={[{ required: true }]}>
+              <InputNumber min={0} max={1000} />
+            </Form.Item>
+            <Form.Item label="노출 기간 (선택, 비우면 상시)" name="range">
+              <DatePicker.RangePicker showTime style={{ width: "100%" }} allowEmpty={[true, true]} />
+            </Form.Item>
+            <Form.Item name="isActive" valuePropName="checked" label="활성">
+              <Switch />
+            </Form.Item>
+          </Form>
+
+          <PreviewPanel form={form} />
+        </div>
       </Modal>
     </Space>
   );

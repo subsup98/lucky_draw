@@ -43,6 +43,7 @@ export class BannerController {
         body: true,
         imageUrl: true,
         linkUrl: true,
+        ctaLabel: true,
         priority: true,
         startAt: true,
         endAt: true,
