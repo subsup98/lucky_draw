@@ -1,6 +1,9 @@
 name: Deploy v3 preview
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:

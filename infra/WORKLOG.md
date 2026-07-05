@@ -1,5 +1,12 @@
 # infra / WORKLOG.md
 
+## 2026-07-05 - v3 preview 자동 배포 트리거 보정
+
+- 무엇을 / `Deploy v3 preview` GitHub Actions 워크플로가 `main` push에서도 실행되도록 트리거를 추가했다.
+- 왜 / 로컬 GitHub CLI와 브라우저가 로그인되지 않은 상태에서는 `workflow_dispatch` 수동 실행을 바로 걸 수 없어, 배포 요청 시 push만으로 preview 배포가 시작되도록 하기 위해서다.
+- 결과 / `.github/workflows/deploy-v3-preview.yml`에 `push.branches: [main]`을 추가하고, 실행 문서에 수동 실행과 main push 자동 실행 경로를 함께 기록했다.
+- 다음 작업 / GitHub Actions 실행 결과를 확인하고, EC2 secrets 누락 또는 SSH/빌드 실패가 있으면 해당 단계별로 보정한다.
+
 ## 2026-07-01 - EC2 Docker build prepare script 누락 수정
 
 - 무엇을 / 운영 Dockerfile 3종이 `pnpm install` 전에 `scripts/prepare-hooks.cjs`를 함께 복사하도록 수정했다.

@@ -1,5 +1,12 @@
 # 전체 작업 로그 (WORKLOG.md)
 
+## 2026-07-05 - v3 preview 배포 트리거 보정
+
+- **무엇을**: `Deploy v3 preview` GitHub Actions 워크플로가 `main` push에서도 실행되도록 보정했다.
+- **왜**: GitHub 로그인 없이도 최신 수정사항을 push하면 EC2 preview 배포가 시작되게 하기 위해서다.
+- **결과**: 수동 `workflow_dispatch`와 `main` push 자동 실행을 모두 지원하도록 변경했다.
+- **다음 작업**: Actions 실행 결과와 배포 smoke check를 확인한다.
+
 ## 2026-06-25 - 예약 구매 입고 후 순차 발송 관리 구현
 
 - **무엇을**: 예약 구매 상품의 입고 수량 기준 순차 발송/수령 대상 조회 및 선정 기능을 구현했다.

@@ -31,7 +31,9 @@ https://api.nizigen.co.kr/api/health
 
 ## Run
 
-GitHub repository 페이지에서:
+GitHub repository 페이지에서 수동으로 실행하거나, `main` 브랜치에 push하면 자동으로 실행됩니다.
+
+수동 실행:
 
 1. `Actions`
 2. `Deploy v3 preview`
