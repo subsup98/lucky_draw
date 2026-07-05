@@ -14,6 +14,13 @@
 - **결과**: 필수 secrets 검증과 선택값 기본값 처리를 `Resolve deployment environment` step으로 분리했다.
 - **다음 작업**: 새 Actions 실행에서 실제 deploy job이 생성되는지 확인한다.
 
+## 2026-07-05 - v3 preview YAML heredoc 들여쓰기 수정
+
+- **무엇을**: `Deploy on EC2` step의 heredoc 종료 표식 `REMOTE`를 YAML `run` 블록 안으로 들여쓰기했다.
+- **왜**: GitHub Actions가 `.github/workflows/deploy-v3-preview.yml#L105` YAML syntax 오류로 job을 생성하지 못했기 때문이다.
+- **결과**: 워크플로 파일이 YAML 블록 문법을 지키도록 수정했다.
+- **다음 작업**: 새 Actions 실행에서 deploy job 생성 여부를 확인한다.
+
 ## 2026-06-25 - 예약 구매 입고 후 순차 발송 관리 구현
 
 - **무엇을**: 예약 구매 상품의 입고 수량 기준 순차 발송/수령 대상 조회 및 선정 기능을 구현했다.

@@ -102,7 +102,7 @@ jobs:
 
           docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build user backend nginx
           docker compose --env-file .env.prod -f docker-compose.prod.yml ps
-REMOTE
+          REMOTE
 
       - name: Smoke check
         shell: bash

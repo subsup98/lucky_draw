@@ -14,6 +14,13 @@
 - 결과 / 필수 secrets는 `EC2_HOST`, `EC2_SSH_KEY`만 검증하고 선택값 `EC2_USER`, `EC2_PORT`, `EC2_DEPLOY_DIR`는 bash 기본값으로 처리한다.
 - 다음 작업 / main push 후 job 생성 여부와 deploy/smoke check 결과를 확인한다.
 
+## 2026-07-05 - v3 preview YAML heredoc 들여쓰기 수정
+
+- 무엇을 / `Deploy on EC2` step의 heredoc 종료 표식 `REMOTE`를 YAML `run` 블록 안으로 들여쓰기했다.
+- 왜 / GitHub Actions가 `.github/workflows/deploy-v3-preview.yml#L105` YAML syntax 오류로 job을 생성하지 못했기 때문이다.
+- 결과 / bash에는 들여쓰기 제거 후 정상 heredoc으로 전달되고, YAML 파서는 해당 줄을 block scalar 내용으로 해석한다.
+- 다음 작업 / 새 Actions 실행에서 deploy job 생성 여부를 확인한다.
+
 ## 2026-07-01 - EC2 Docker build prepare script 누락 수정
 
 - 무엇을 / 운영 Dockerfile 3종이 `pnpm install` 전에 `scripts/prepare-hooks.cjs`를 함께 복사하도록 수정했다.
