@@ -554,13 +554,15 @@ export class OrderService {
         throw new ConflictException('order state changed concurrently');
       }
 
-      // 재고(soldTickets) 복구
-      await tx.$executeRaw`
-        UPDATE "KujiEvent"
-           SET "soldTickets" = "soldTickets" - ${order.ticketCount},
-               "updatedAt"   = ${new Date()}
-         WHERE "id" = ${order.kujiEventId}
-      `;
+      // 쿠지 주문이면 이벤트 판매 수량을 복구한다. 일반 상품 주문은 SalesOrderService에서 별도 처리.
+      if (order.kujiEventId) {
+        await tx.$executeRaw`
+          UPDATE "KujiEvent"
+             SET "soldTickets" = "soldTickets" - ${order.ticketCount},
+                 "updatedAt"   = ${new Date()}
+           WHERE "id" = ${order.kujiEventId}
+        `;
+      }
 
       return tx.order.findUnique({
         where: { id: orderId },
@@ -570,7 +572,9 @@ export class OrderService {
 
     if (!result) throw new ServiceUnavailableException('order not found after cancel');
     // Redis 1차 카운터도 복구 (DB soldTickets 복구와 별개)
-    await this.stock.release(result.kujiEventId, result.ticketCount);
+    if (result.kujiEventId) {
+      await this.stock.release(result.kujiEventId, result.ticketCount);
+    }
     void this.audit.record({
       actorType: 'USER',
       actorUserId: userId,
@@ -585,12 +589,14 @@ export class OrderService {
   private orderSelect() {
     return {
       id: true,
+      orderNumber: true,
       userId: true,
       kujiEventId: true,
       ticketCount: true,
       unitPrice: true,
       totalAmount: true,
       status: true,
+      deliveryMethod: true,
       idempotencyKey: true,
       shippingSnapshot: true,
       createdAt: true,
@@ -598,17 +604,42 @@ export class OrderService {
       paidAt: true,
       drawnAt: true,
       cancelledAt: true,
+      orderItems: {
+        select: {
+          id: true,
+          productId: true,
+          productNameSnapshot: true,
+          priceSnapshot: true,
+          quantity: true,
+          reservationSequence: true,
+          paidSequence: true,
+          product: { select: { id: true, name: true, type: true } },
+        },
+      },
+      pickup: {
+        select: {
+          id: true,
+          status: true,
+          location: true,
+          scheduledAt: true,
+          pickedUpAt: true,
+        },
+      },
     } satisfies Prisma.OrderSelect;
   }
 
   private serializeOrder(o: Prisma.OrderGetPayload<{ select: ReturnType<OrderService['orderSelect']> }>) {
     return {
       id: o.id,
+      orderNumber: o.orderNumber,
       kujiEventId: o.kujiEventId,
       ticketCount: o.ticketCount,
       unitPrice: o.unitPrice,
       totalAmount: o.totalAmount,
       status: o.status,
+      deliveryMethod: o.deliveryMethod,
+      orderItems: o.orderItems,
+      pickup: o.pickup,
       shippingSnapshot: this.cipher.decryptJson(
         o.shippingSnapshot,
         FieldCipherService.aad('Order', 'shippingSnapshot'),

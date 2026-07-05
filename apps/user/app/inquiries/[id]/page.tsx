@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "../../lib/api";
 
 type Status = "OPEN" | "IN_PROGRESS" | "ANSWERED" | "CLOSED";
@@ -28,6 +28,7 @@ const STATUS_LABEL: Record<Status, string> = {
 
 export default function InquiryDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [inq, setInq] = useState<Detail | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -36,12 +37,13 @@ export default function InquiryDetailPage({ params }: { params: { id: string } }
       .then(setInq)
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) {
-          router.replace("/login");
+          const loginPath = pathname.startsWith("/v3") ? "/v3/login" : "/login";
+          router.replace(`${loginPath}?next=${encodeURIComponent(pathname)}`);
           return;
         }
         setErr(e instanceof ApiError ? e.message : "failed");
       });
-  }, [params.id, router]);
+  }, [params.id, pathname, router]);
 
   if (err) return <main className="p-6 text-red-600">{err}</main>;
   if (!inq) return <main className="p-6">불러오는 중...</main>;

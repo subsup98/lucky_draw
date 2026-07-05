@@ -10,6 +10,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { AuditLogService, type AuditContext } from '../audit-log/audit-log.service';
 import { DrawService } from '../draw/draw.service';
+import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PAYMENT_PROVIDER,
@@ -26,6 +27,7 @@ export class PaymentService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
     private readonly draw: DrawService,
+    private readonly notifications: NotificationService,
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
   ) {}
 
@@ -57,6 +59,12 @@ export class PaymentService {
         status: true,
         totalAmount: true,
         kujiEvent: { select: { title: true } },
+        orderItems: {
+          select: { productNameSnapshot: true },
+          take: 2,
+          orderBy: { createdAt: 'asc' },
+        },
+        payment: { select: { provider: true, method: true, status: true } },
       },
     });
     if (!order) throw new NotFoundException('order not found');
@@ -64,12 +72,18 @@ export class PaymentService {
     if (order.status !== 'PENDING_PAYMENT') {
       throw new ConflictException(`order not payable: ${order.status}`);
     }
+    if (order.payment?.provider === 'manual' && order.payment.method === 'BANK_TRANSFER') {
+      throw new ConflictException('bank transfer order cannot create payment intent');
+    }
 
     const result = await this.provider.initiate({
       orderId: order.id,
       userId,
       amount: order.totalAmount,
-      orderName: order.kujiEvent?.title ?? 'kuji order',
+      orderName:
+        order.kujiEvent?.title ??
+        (order.orderItems.map((item) => item.productNameSnapshot).join(', ') ||
+          'product order'),
     });
     return { provider: result.provider, ...result.payload };
   }
@@ -152,6 +166,7 @@ export class PaymentService {
         if (updated === 0 && locked.status !== 'PAID') {
           throw new ConflictException('order state changed concurrently');
         }
+        await this.applyPaidOrderEffects(tx, locked.id);
         return created;
       });
 
@@ -242,6 +257,7 @@ export class PaymentService {
              SET "status"='PAID', "paidAt"=${new Date()}, "updatedAt"=${new Date()}
            WHERE "id" = ${order.id} AND "status"='PENDING_PAYMENT'
         `;
+        await this.applyPaidOrderEffects(tx, order.id);
         return created;
       });
 
@@ -395,6 +411,101 @@ export class PaymentService {
     };
   }
 
+  async confirmDepositByAdmin(
+    adminId: string,
+    orderId: string,
+    depositorName?: string,
+    ctx?: AuditContext,
+  ) {
+    const paidAt = new Date();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const [locked] = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: string;
+          deliveryMethod: string;
+          totalAmount: number;
+        }>
+      >`
+        SELECT "id", "status", "deliveryMethod", "totalAmount" FROM "Order"
+         WHERE "id" = ${orderId} FOR UPDATE
+      `;
+      if (!locked) throw new NotFoundException('order not found');
+      if (locked.status !== 'PENDING_PAYMENT') {
+        throw new ConflictException(`order not waiting payment: ${locked.status}`);
+      }
+
+      const payment = await tx.payment.findUnique({ where: { orderId } });
+      if (!payment) throw new ConflictException('payment not found');
+      if (payment.provider !== 'manual' || payment.method !== 'BANK_TRANSFER') {
+        throw new ConflictException('payment is not bank transfer');
+      }
+      if (
+        payment.status !== 'WAITING_DEPOSIT' &&
+        payment.status !== 'DEPOSIT_CHECK_REQUIRED' &&
+        payment.status !== 'REQUESTED'
+      ) {
+        throw new ConflictException(`payment not confirmable: ${payment.status}`);
+      }
+      if (payment.amount !== locked.totalAmount) {
+        throw new ConflictException('payment amount mismatch');
+      }
+
+      const updatedPayment = await tx.payment.update({
+        where: { orderId },
+        data: {
+          status: 'PAID',
+          paidAt,
+          confirmedAt: paidAt,
+          confirmedByAdminId: adminId,
+          depositorName: depositorName ?? payment.depositorName,
+        },
+      });
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'PAID',
+          paidAt,
+        },
+      });
+
+      await this.applyPaidOrderEffects(tx, orderId);
+
+      await this.notifications.userOrder(
+        {
+          orderId,
+          messageType: 'DEPOSIT_CONFIRMED',
+          message: '입금 확인이 완료되었습니다.',
+        },
+        tx,
+      );
+
+      return updatedPayment;
+    });
+
+    void this.audit.record({
+      actorType: 'ADMIN',
+      adminUserId: adminId,
+      action: 'DEPOSIT_CONFIRM',
+      targetType: 'Payment',
+      targetId: result.id,
+      ctx,
+      metadata: {
+        orderId,
+        amount: result.amount,
+        depositorName: depositorName ?? result.depositorName,
+      },
+    });
+
+    return {
+      ...this.serializePayment(result),
+      orderStatus: 'PAID',
+      confirmedAt: result.confirmedAt,
+      depositorName: result.depositorName,
+    };
+  }
+
   async findByOrder(userId: string, orderId: string) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -421,5 +532,60 @@ export class PaymentService {
       paidAt: p.paidAt,
       requestedAt: p.requestedAt,
     };
+  }
+
+  private async applyPaidOrderEffects(tx: Prisma.TransactionClient, orderId: string) {
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: { deliveryMethod: true },
+    });
+    if (!order) throw new NotFoundException('order not found');
+
+    const preorderItems = await tx.orderItem.findMany({
+      where: { orderId, product: { type: 'PREORDER' } },
+      select: { id: true, productId: true, paidSequence: true },
+    });
+    for (const item of preorderItems) {
+      if (!item.productId || item.paidSequence !== null) continue;
+      const agg = await tx.orderItem.aggregate({
+        where: {
+          productId: item.productId,
+          paidSequence: { not: null },
+          NOT: { id: item.id },
+        },
+        _max: { paidSequence: true },
+      });
+      await tx.orderItem.update({
+        where: { id: item.id },
+        data: { paidSequence: (agg._max.paidSequence ?? 0) + 1 },
+      });
+    }
+
+    if (order.deliveryMethod === 'SHIPPING') {
+      await tx.shipment.updateMany({
+        where: { orderId, status: 'PENDING' },
+        data: { status: 'PREPARING' },
+      });
+    }
+
+    await this.notifications.userOrder(
+      {
+        orderId,
+        messageType: 'PAYMENT_COMPLETED',
+        message: '결제가 완료되었습니다.',
+      },
+      tx,
+    );
+
+    if (order.deliveryMethod === 'PICKUP') {
+      await this.notifications.userOrder(
+        {
+          orderId,
+          messageType: 'PICKUP_READY',
+          message: '현장 수령 대기 상태로 전환되었습니다.',
+        },
+        tx,
+      );
+    }
   }
 }

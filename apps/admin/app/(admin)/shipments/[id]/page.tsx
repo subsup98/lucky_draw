@@ -22,9 +22,11 @@ import { api, ApiError } from "../../../lib/api";
 type ShipmentStatus =
   | "PENDING"
   | "PREPARING"
+  | "INVOICE_REGISTERED"
   | "SHIPPED"
   | "IN_TRANSIT"
   | "DELIVERED"
+  | "ON_HOLD"
   | "RETURNED"
   | "CANCELLED"
   | "FAILED";
@@ -51,15 +53,18 @@ type Detail = {
     status: string;
     createdAt: string;
     user: { id: string; email: string; name: string | null; phone: string | null };
-    kujiEvent: { id: string; title: string; slug: string };
+    kujiEvent: { id: string; title: string; slug: string } | null;
+    orderItems?: { productNameSnapshot: string; quantity: number }[];
   };
 };
 
 const ALLOWED: Record<ShipmentStatus, ShipmentStatus[]> = {
-  PENDING: ["PREPARING", "CANCELLED", "FAILED"],
-  PREPARING: ["SHIPPED", "CANCELLED", "FAILED"],
-  SHIPPED: ["IN_TRANSIT", "DELIVERED", "RETURNED", "FAILED"],
-  IN_TRANSIT: ["DELIVERED", "RETURNED", "FAILED"],
+  PENDING: ["PREPARING", "ON_HOLD", "CANCELLED", "FAILED"],
+  PREPARING: ["INVOICE_REGISTERED", "SHIPPED", "ON_HOLD", "CANCELLED", "FAILED"],
+  INVOICE_REGISTERED: ["SHIPPED", "ON_HOLD", "CANCELLED", "FAILED"],
+  SHIPPED: ["IN_TRANSIT", "DELIVERED", "ON_HOLD", "RETURNED", "FAILED"],
+  IN_TRANSIT: ["DELIVERED", "ON_HOLD", "RETURNED", "FAILED"],
+  ON_HOLD: ["PREPARING", "INVOICE_REGISTERED", "SHIPPED", "CANCELLED", "FAILED"],
   DELIVERED: [],
   CANCELLED: [],
   RETURNED: [],
@@ -69,13 +74,37 @@ const ALLOWED: Record<ShipmentStatus, ShipmentStatus[]> = {
 const STATUS_COLOR: Record<ShipmentStatus, string> = {
   PENDING: "default",
   PREPARING: "blue",
+  INVOICE_REGISTERED: "purple",
   SHIPPED: "cyan",
   IN_TRANSIT: "geekblue",
   DELIVERED: "green",
+  ON_HOLD: "orange",
   RETURNED: "orange",
   CANCELLED: "default",
   FAILED: "red",
 };
+
+const STATUS_LABEL: Record<ShipmentStatus, string> = {
+  PENDING: "대기",
+  PREPARING: "준비중",
+  INVOICE_REGISTERED: "송장등록",
+  SHIPPED: "발송",
+  IN_TRANSIT: "배송중",
+  DELIVERED: "완료",
+  ON_HOLD: "보류",
+  RETURNED: "반송",
+  CANCELLED: "취소",
+  FAILED: "실패",
+};
+
+function orderTitle(order: Detail["order"]) {
+  if (order.kujiEvent) return order.kujiEvent.title;
+  const orderItems = order.orderItems ?? [];
+  if (orderItems.length === 0) return "상품 주문";
+  return orderItems
+    .map((item) => `${item.productNameSnapshot} x${item.quantity}`)
+    .join(", ");
+}
 
 export default function ShipmentDetailPage() {
   const params = useParams<{ id: string }>();
@@ -170,7 +199,7 @@ export default function ShipmentDetailPage() {
         <Typography.Title level={4} style={{ margin: 0 }}>
           배송 {shipment.id}
         </Typography.Title>
-        <Tag color={STATUS_COLOR[shipment.status]}>{shipment.status}</Tag>
+        <Tag color={STATUS_COLOR[shipment.status]}>{STATUS_LABEL[shipment.status]}</Tag>
       </Space>
 
       <Card
@@ -210,11 +239,11 @@ export default function ShipmentDetailPage() {
           <Descriptions.Item label="주문 상태">
             <Tag>{shipment.order.status}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="쿠지">{shipment.order.kujiEvent.title}</Descriptions.Item>
+          <Descriptions.Item label="주문 품목">{orderTitle(shipment.order)}</Descriptions.Item>
           <Descriptions.Item label="사용자">
             {shipment.order.user.name ?? "-"} ({shipment.order.user.email})
           </Descriptions.Item>
-          <Descriptions.Item label="티켓">{shipment.order.ticketCount}</Descriptions.Item>
+          <Descriptions.Item label="수량">{shipment.order.ticketCount}</Descriptions.Item>
           <Descriptions.Item label="금액">
             {shipment.order.totalAmount.toLocaleString()}원
           </Descriptions.Item>
@@ -231,7 +260,7 @@ export default function ShipmentDetailPage() {
         cancelText="취소"
       >
         <Typography.Paragraph type="secondary">
-          현재 상태: <Tag color={STATUS_COLOR[shipment.status]}>{shipment.status}</Tag>
+          현재 상태: <Tag color={STATUS_COLOR[shipment.status]}>{STATUS_LABEL[shipment.status]}</Tag>
           {isTerminal && (
             <Typography.Text type="warning">
               {" "}
@@ -240,11 +269,15 @@ export default function ShipmentDetailPage() {
           )}
         </Typography.Paragraph>
         <Form form={form} layout="vertical">
-          <Form.Item label="다음 상태" name="status" help={`전이 가능: ${nextStatuses.join(", ") || "없음"}`}>
+          <Form.Item
+            label="다음 상태"
+            name="status"
+            help={`전이 가능: ${nextStatuses.map((status) => STATUS_LABEL[status]).join(", ") || "없음"}`}
+          >
             <Select
               allowClear
               disabled={isTerminal}
-              options={nextStatuses.map((v) => ({ value: v, label: v }))}
+              options={nextStatuses.map((v) => ({ value: v, label: STATUS_LABEL[v] }))}
               placeholder="변경하지 않으려면 비워두세요"
             />
           </Form.Item>

@@ -9,7 +9,7 @@
 - [x] GET /shipments/{shipmentId}
 - [ ] PATCH /admin/orders/{orderId}/shipment
 - [ ] 택배사 연동(추상화)
-- [ ] 배송 상태 전이 정의(PENDING → PREPARING → SHIPPED → IN_TRANSIT → DELIVERED)
+- [x] 배송 상태 전이 정의(PENDING → PREPARING → INVOICE_REGISTERED → SHIPPED → IN_TRANSIT → DELIVERED)
 
 ## 변경 로그
 
@@ -40,3 +40,11 @@
   - SHIPPED 전이 시 `shippedAt=now`, DELIVERED 전이 시 `deliveredAt=now` 자동.
   - `SHIPMENT_UPDATE` audit log 기록(from/to, changed 필드, carrier/trackingNumber).
 - 6 패키지 typecheck 통과.
+
+### 2026-06-24
+- **신규 판매 시스템 배송 상태 보강**.
+  - `ShipmentStatus.INVOICE_REGISTERED`: 송장번호가 등록된 상태.
+  - `ShipmentStatus.ON_HOLD`: 주소 오류, 재고 지연 등으로 배송이 보류된 상태.
+  - 관리자 상태 전이표를 `PENDING → PREPARING → INVOICE_REGISTERED → SHIPPED → IN_TRANSIT → DELIVERED` 기준으로 갱신.
+  - `INVOICE_REGISTERED` 전이 시 `invoiceRegisteredAt` 자동 기록.
+  - `@lucky/backend typecheck` 통과.

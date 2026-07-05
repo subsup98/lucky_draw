@@ -53,6 +53,9 @@ export class DrawService {
     if (order.status !== 'PAID') {
       throw new ConflictException(`order not drawable: ${order.status}`);
     }
+    if (!order.kujiEventId) {
+      throw new ConflictException('sales product order is not drawable');
+    }
 
     // 픽앤팝(v2): 사전 셔플 결과 사용. v1: Inventory.version CAS + 가중 랜덤.
     const hasTickets = await this.prisma.ticket.count({

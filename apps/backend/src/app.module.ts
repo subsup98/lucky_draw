@@ -12,11 +12,14 @@ import { HealthController } from './health.controller';
 import { InquiryModule } from './inquiry/inquiry.module';
 import { KujiModule } from './kuji/kuji.module';
 import { NoticeModule } from './notice/notice.module';
+import { NotificationModule } from './notification/notification.module';
 import { OrderModule } from './order/order.module';
 import { PaymentModule } from './payment/payment.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ProductModule } from './product/product.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { RedisModule } from './redis/redis.module';
+import { SalesOrderModule } from './sales-order/sales-order.module';
 import { SiteConfigModule } from './site-config/site-config.module';
 import { UploadModule } from './upload/upload.module';
 import { UserModule } from './user/user.module';
@@ -37,10 +40,13 @@ import { TicketModule } from './ticket/ticket.module';
     AuthModule,
     AdminAuthModule,
     KujiModule,
+    ProductModule,
     OrderModule,
+    SalesOrderModule,
     PaymentModule,
     DrawModule,
     ShipmentModule,
+    NotificationModule,
     NoticeModule,
     InquiryModule,
     SiteConfigModule,

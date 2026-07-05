@@ -45,7 +45,7 @@ export default function AdminLoginPage() {
         setStage("totp");
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "로그인 실패");
+      setError(e instanceof ApiError ? e.message : "로그인에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -62,7 +62,7 @@ export default function AdminLoginPage() {
       });
       setBackupCodes(res.backupCodes);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "TOTP 등록 실패");
+      setError(e instanceof ApiError ? e.message : "TOTP 등록에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -79,7 +79,7 @@ export default function AdminLoginPage() {
       });
       router.push("/audit-logs");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "TOTP 검증 실패");
+      setError(e instanceof ApiError ? e.message : "TOTP 검증에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -96,19 +96,27 @@ export default function AdminLoginPage() {
       });
       router.push("/audit-logs");
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "백업 코드 검증 실패");
+      setError(e instanceof ApiError ? e.message : "백업 코드 검증에 실패했습니다.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#f5f5f5" }}>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "#f5f5f5",
+        padding: 16,
+      }}
+    >
       <Card
-        style={{ width: 420 }}
+        style={{ width: "100%", maxWidth: 420 }}
         title="관리자 로그인"
         extra={
-          <Link href="/privacy" style={{ fontSize: 12 }}>
+          <Link href="/privacy" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
             개인정보처리방침
           </Link>
         }
@@ -117,10 +125,10 @@ export default function AdminLoginPage() {
 
         {stage === "login" && (
           <Form layout="vertical" onFinish={onLogin}>
-            <Form.Item label="아이디" name="username" rules={[{ required: true }]}>
+            <Form.Item label="아이디" name="username" rules={[{ required: true, message: "아이디를 입력해 주세요." }]}>
               <Input autoComplete="username" />
             </Form.Item>
-            <Form.Item label="비밀번호" name="password" rules={[{ required: true }]}>
+            <Form.Item label="비밀번호" name="password" rules={[{ required: true, message: "비밀번호를 입력해 주세요." }]}>
               <Input.Password autoComplete="current-password" />
             </Form.Item>
             <Button type="primary" htmlType="submit" block loading={loading}>
@@ -134,11 +142,11 @@ export default function AdminLoginPage() {
             {!backupCodes ? (
               <>
                 <Typography.Paragraph>
-                  최초 로그인입니다. Authenticator 앱으로 QR을 스캔한 뒤 6자리 코드를 입력하세요.
+                  최초 로그인입니다. Authenticator 앱으로 QR을 스캔하고 6자리 코드를 입력해 주세요.
                 </Typography.Paragraph>
                 {qrDataUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={qrDataUrl} alt="TOTP QR" style={{ width: 200, height: 200 }} />
+                  <img src={qrDataUrl} alt="TOTP QR" style={{ width: 200, height: 200, maxWidth: "100%" }} />
                 )}
                 {otpauthUrl && (
                   <Typography.Text code copyable style={{ fontSize: 11, wordBreak: "break-all" }}>
@@ -146,7 +154,7 @@ export default function AdminLoginPage() {
                   </Typography.Text>
                 )}
                 <Form layout="vertical" onFinish={onEnroll}>
-                  <Form.Item label="TOTP 코드 (6자리)" name="code" rules={[{ required: true, len: 6 }]}>
+                  <Form.Item label="TOTP 코드 6자리" name="code" rules={[{ required: true, len: 6, message: "6자리 코드를 입력해 주세요." }]}>
                     <Input maxLength={6} inputMode="numeric" />
                   </Form.Item>
                   <Button type="primary" htmlType="submit" block loading={loading}>
@@ -159,13 +167,13 @@ export default function AdminLoginPage() {
                 <Alert
                   type="warning"
                   showIcon
-                  message="아래 백업 코드를 안전한 곳에 보관하세요. 다시 표시되지 않습니다."
+                  message="아래 백업 코드를 안전한 곳에 보관해 주세요. 다시 표시되지 않습니다."
                 />
-                <pre style={{ background: "#fafafa", padding: 12, borderRadius: 4 }}>
+                <pre style={{ background: "#fafafa", padding: 12, borderRadius: 4, overflowX: "auto" }}>
                   {backupCodes.join("\n")}
                 </pre>
                 <Button type="primary" block onClick={() => router.push("/audit-logs")}>
-                  대시보드로 이동
+                  감사 로그로 이동
                 </Button>
               </>
             )}
@@ -180,7 +188,7 @@ export default function AdminLoginPage() {
                 label: "TOTP",
                 children: (
                   <Form layout="vertical" onFinish={onVerify}>
-                    <Form.Item label="TOTP 코드 (6자리)" name="code" rules={[{ required: true, len: 6 }]}>
+                    <Form.Item label="TOTP 코드 6자리" name="code" rules={[{ required: true, len: 6, message: "6자리 코드를 입력해 주세요." }]}>
                       <Input maxLength={6} inputMode="numeric" autoFocus />
                     </Form.Item>
                     <Button type="primary" htmlType="submit" block loading={loading}>
@@ -194,7 +202,7 @@ export default function AdminLoginPage() {
                 label: "백업 코드",
                 children: (
                   <Form layout="vertical" onFinish={onBackup}>
-                    <Form.Item label="백업 코드 (xxxx-xxxx-xxxx)" name="code" rules={[{ required: true }]}>
+                    <Form.Item label="백업 코드" name="code" rules={[{ required: true, message: "백업 코드를 입력해 주세요." }]}>
                       <Input />
                     </Form.Item>
                     <Button type="primary" htmlType="submit" block loading={loading}>

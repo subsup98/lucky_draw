@@ -41,6 +41,25 @@ DB 설계/마이그레이션 진행 로그.
   - 감사 로그: `AuditLog(action, createdAt)`, `(targetType, targetId)`.
 
 ## 변경 로그
+### 2026-06-24
+- **예약 구매/일반 판매 주문 기반 스키마 보강**.
+  - 추가 enum: `ProductType`, `ProductSaleStatus`, `DeliveryMethod`, `PickupStatus`, `Notification*`, `PrivacyAccessType`.
+  - 보강 enum: `PaymentStatus.WAITING_DEPOSIT/DEPOSIT_CHECK_REQUIRED`, `ShipmentStatus.INVOICE_REGISTERED/ON_HOLD`.
+  - 추가 모델: `Product`, `OrderItem`, `Pickup`, `Notification`, `PrivacyAccessLog`.
+  - 기존 모델 보강: `Order.orderNumber/deliveryMethod/adminMemo/completedAt/refundedAt`, `Payment.depositorName/confirmedAt/confirmedByAdminId`, `Shipment.invoiceRegisteredAt/holdReason`.
+  - 마이그레이션 파일: `20260624000000_sales_order_foundation`.
+  - 적용: Docker/Postgres 기동 후 `prisma migrate dev` 성공. `migrate status`에서 DB schema up to date 확인.
+  - 검증: `prisma validate`, `prisma generate`, `@lucky/backend typecheck` 통과.
+- **상품 주문 지원을 위한 주문 FK 보강**.
+  - `Order.kujiEventId`를 nullable로 변경해 쿠지 주문은 `KujiEvent`, 일반 상품 주문은 `OrderItem.productId`를 기준으로 연결되도록 분리.
+  - 마이그레이션 파일: `20260624001000_optional_kuji_order`.
+  - 적용: `migrate status`에서 DB schema up to date 확인.
+- **현장 수령 완료 상태 추가**.
+  - `OrderStatus.COMPLETED` 추가.
+  - 현장 수령 완료 시 `Order.completedAt`과 함께 완료 상태를 표현.
+  - 마이그레이션 파일: `20260624002000_order_completed_status`.
+  - 적용: `migrate status`에서 DB schema up to date 확인.
+
 ### 2026-04-17
 - Postgres 16 컨테이너 기동 (Docker Compose, 포트 5432).
 - Prisma 5.22 초기 설정 완료.

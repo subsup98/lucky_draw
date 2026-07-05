@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError, setAccessToken } from "../lib/api";
 import type { OrderResponse, ShipmentResponse } from "../lib/types";
 
@@ -13,6 +13,7 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELLED: "취소됨",
   FAILED: "실패",
   REFUNDED: "환불됨",
+  COMPLETED: "완료",
 };
 
 const SHIPMENT_STATUS_LABEL: Record<string, string> = {
@@ -23,6 +24,7 @@ const SHIPMENT_STATUS_LABEL: Record<string, string> = {
 
 export default function MePage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [tab, setTab] = useState<"orders" | "shipments">("orders");
   const [orders, setOrders] = useState<OrderResponse[] | null>(null);
   const [shipments, setShipments] = useState<ShipmentResponse[] | null>(null);
@@ -39,12 +41,13 @@ export default function MePage() {
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) {
-          router.replace("/login");
+          const loginPath = pathname.startsWith("/v3") ? "/v3/login" : "/login";
+          router.replace(`${loginPath}?next=${encodeURIComponent(pathname)}`);
           return;
         }
         setErr(e instanceof ApiError ? e.message : "failed");
       });
-  }, [router]);
+  }, [pathname, router]);
 
   return (
     <main className="mx-auto max-w-3xl p-6">
@@ -86,12 +89,24 @@ export default function MePage() {
                 >
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-mono text-xs text-gray-500">{o.id}</p>
+                      <p className="font-mono text-xs text-gray-500">
+                        {o.orderNumber ?? o.id}
+                      </p>
                       <p className="mt-1">
-                        {o.ticketCount}장 · {o.totalAmount.toLocaleString()}원
+                        {o.orderItems?.[0]?.productNameSnapshot ?? "쿠지 티켓"}
+                        {o.orderItems && o.orderItems.length > 1
+                          ? ` 외 ${o.orderItems.length - 1}건`
+                          : ""}{" "}
+                        · {o.ticketCount}개 · {o.totalAmount.toLocaleString()}원
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
                         {new Date(o.createdAt).toLocaleString()}
+                        {o.deliveryMethod && (
+                          <>
+                            {" · "}
+                            {o.deliveryMethod === "SHIPPING" ? "택배" : "현장 수령"}
+                          </>
+                        )}
                       </p>
                     </div>
                     <span className="text-xs px-2 py-1 bg-gray-100 rounded">

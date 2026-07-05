@@ -54,13 +54,17 @@ export interface ApiClient {
 // ─── 에러 ──────────────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
+  public rawMessage: string;
+
   constructor(
     public status: number,
     public code: string,
     message: string,
+    rawMessage: string = message,
   ) {
-    super(message);
+    super(toKoreanApiErrorMessage(message, status));
     this.name = 'ApiError';
+    this.rawMessage = rawMessage;
   }
 }
 
@@ -261,4 +265,70 @@ function safeJson(text: string): unknown {
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
+}
+
+export function toKoreanApiErrorMessage(message: unknown, status?: number): string {
+  const source = Array.isArray(message) ? message.join(', ') : String(message || '');
+  const raw = source.trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) return fallbackKoreanMessage(status);
+  if (/[가-힣]/.test(raw)) return raw;
+
+  if (status === 401) return '로그인이 필요하거나 인증 정보가 올바르지 않습니다.';
+  if (status === 403) return '이 작업을 수행할 권한이 없습니다.';
+  if (status === 404) return '요청한 정보를 찾을 수 없습니다.';
+  if (status === 409 && lower.includes('already')) return '이미 처리되었거나 중복된 요청입니다.';
+  if (status === 429) return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+  if (status && status >= 500) return '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+
+  if (lower.includes('birthdate')) return '생년월일을 올바른 날짜 형식으로 입력해 주세요.';
+  if (lower.includes('password must be')) {
+    return '비밀번호는 10자 이상이며 영문, 숫자, 특수문자 중 2종류 이상을 포함해야 합니다.';
+  }
+  if (lower.includes('email already registered')) return '이미 가입된 이메일입니다.';
+  if (lower.includes('invalid email') || lower.includes('email must be an email')) {
+    return '이메일 형식이 올바르지 않습니다.';
+  }
+  if (lower.includes('must be 14')) return '만 14세 이상만 가입할 수 있습니다.';
+  if (lower.includes('account locked')) return '계정이 잠겼습니다. 잠시 후 다시 시도해 주세요.';
+  if (lower.includes('admin unavailable')) return '관리자 계정을 사용할 수 없습니다.';
+  if (lower.includes('invalid code')) return '인증 코드가 올바르지 않습니다.';
+  if (lower.includes('code expired') || lower.includes('not requested')) {
+    return '인증 코드가 만료되었거나 요청 내역이 없습니다. 다시 요청해 주세요.';
+  }
+  if (lower.includes('too many attempts')) return '시도 횟수를 초과했습니다. 다시 코드를 요청해 주세요.';
+  if (lower.includes('invalid credentials') || lower.includes('unauthorized')) {
+    return '아이디 또는 비밀번호가 올바르지 않습니다.';
+  }
+  if (lower.includes('idempotency-key')) return '주문 요청 식별자가 누락되었습니다. 새로고침 후 다시 시도해 주세요.';
+  if (lower.includes('out of stock')) return '재고가 부족합니다.';
+  if (lower.includes('not payable')) return '현재 결제할 수 없는 주문입니다.';
+  if (lower.includes('payment already finalized')) return '이미 결제가 완료되었거나 종료된 주문입니다.';
+  if (lower.includes('bank transfer order cannot create payment intent')) {
+    return '무통장입금 주문은 카드/간편결제 요청을 만들 수 없습니다.';
+  }
+  if (lower.includes('payment amount mismatch')) return '결제 금액이 주문 금액과 일치하지 않습니다.';
+  if (lower.includes('payment not found')) return '결제 정보를 찾을 수 없습니다.';
+  if (lower.includes('order not found')) return '주문 정보를 찾을 수 없습니다.';
+  if (lower.includes('address not found')) return '배송지 정보를 찾을 수 없습니다.';
+  if (lower.includes('product not found')) return '상품 정보를 찾을 수 없습니다.';
+  if (lower.includes('not found')) return '요청한 정보를 찾을 수 없습니다.';
+  if (lower.includes('forbidden')) return '이 작업을 수행할 권한이 없습니다.';
+  if (lower.includes('bad request')) return '입력값을 확인해 주세요.';
+  if (lower.includes('request failed')) return fallbackKoreanMessage(status);
+
+  return fallbackKoreanMessage(status);
+}
+
+function fallbackKoreanMessage(status?: number): string {
+  if (status === 400) return '입력값을 확인해 주세요.';
+  if (status === 401) return '로그인이 필요하거나 인증 정보가 올바르지 않습니다.';
+  if (status === 403) return '이 작업을 수행할 권한이 없습니다.';
+  if (status === 404) return '요청한 정보를 찾을 수 없습니다.';
+  if (status === 409) return '이미 처리되었거나 중복된 요청입니다.';
+  if (status === 422) return '입력값을 확인해 주세요.';
+  if (status === 429) return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
+  if (status && status >= 500) return '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+  return '요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
 }

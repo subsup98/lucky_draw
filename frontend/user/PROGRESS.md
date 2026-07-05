@@ -12,6 +12,8 @@
 - [x] 추첨 결과 표시
 - [x] 마이페이지 (주문 · 배송 탭)
 - [x] 주문 / 배송 조회 (`/orders/[id]` 주문 상세 = 결제+추첨+배송 통합)
+- [x] 상품 목록/상세 (예약 구매/일반 판매)
+- [x] 상품 무통장 입금 주문 생성
 - [ ] 공지 / FAQ
 - [ ] 배송지 관리
 
@@ -50,3 +52,24 @@
   - 동의 체크박스(필수). 미체크 시 결제 버튼 disabled.
   - 이유: 관리자 환불 API(소프트 환불, 재고·추첨결과 보존)의 정책을 사용자 UX 에도 명시해 분쟁 소지 차단.
   - 6 패키지 typecheck 전부 통과.
+
+### 2026-06-25
+- **예약 구매/일반 판매 상품 주문 화면 추가**.
+  - `/products`: 공개 상품 API(`GET /api/products`) 연결. 전체/예약 구매/일반 판매 필터, 상품 카드, 가격/재고/입고 예정일 표시.
+  - `/products/[id]`: 공개 상품 상세 API(`GET /api/products/:idOrSlug`) 연결. 수량, 수령 방식(택배/현장 수령), 입금자명, 배송지 입력 후 `POST /api/sales-orders` 호출.
+  - 주문 완료 시 주문번호, 수령 방식, 입금 금액, 결제 상태와 무통장 입금 안내를 표시하고 `/orders/:id`로 이동 가능하게 했다.
+  - 홈 내비게이션에 `상품` 링크 추가.
+  - 검증: `corepack pnpm --filter @lucky/user typecheck` 통과.
+- **상품 주문 내역/상세 표시 보강**.
+  - `/me`: 상품 주문은 상품명, 수량, 수령 방식(택배/현장 수령)을 주문 카드에 표시.
+  - `/orders/[id]`: 상품 주문 품목, 예약 순번, 수령 방식, 현장 수령 상태를 추가 표시. 배송 주문은 기존 송장/배송 상태 표시를 유지.
+  - `app/lib/types.ts`: `OrderResponse`를 신규 상품 주문 응답 구조(`orderItems`, `deliveryMethod`, `pickup`, `orderNumber`)에 맞춰 확장.
+  - 검증: `corepack pnpm --filter @lucky/user typecheck` 통과.
+### 2026-07-03
+
+- **v3 storefront 분리**
+  - `/v3`: 쇼핑몰형 홈 추가.
+  - `/v3/products`: 공개 상품 API 기반 목록/검색/예약·일반 판매 탭 추가.
+  - `/v3/products/[id]`: 기존 상품 상세/주문 흐름 재사용으로 `sales-orders` API와 연결.
+  - 백엔드 API 지연/미기동 상태에서도 화면 테스트가 가능하도록 2.5초 fallback 데모 상품 적용.
+  - 검증: `corepack pnpm --filter @lucky/user typecheck` 통과, `/v3`, `/v3/products` 로컬 200 응답 확인.

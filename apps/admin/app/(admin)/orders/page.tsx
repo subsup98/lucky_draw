@@ -23,33 +23,81 @@ type OrderStatus =
   | "PENDING_PAYMENT"
   | "PAID"
   | "DRAWN"
+  | "COMPLETED"
   | "CANCELLED"
   | "REFUNDED"
   | "FAILED";
+type DeliveryMethod = "SHIPPING" | "PICKUP";
+type PaymentStatus =
+  | "REQUESTED"
+  | "AUTHORIZED"
+  | "WAITING_DEPOSIT"
+  | "DEPOSIT_CHECK_REQUIRED"
+  | "PAID"
+  | "FAILED"
+  | "CANCELLED"
+  | "REFUNDED"
+  | "PARTIAL_REFUNDED";
 
 type OrderRow = {
   id: string;
+  orderNumber: string | null;
   userId: string;
-  kujiEventId: string;
+  kujiEventId: string | null;
   ticketCount: number;
   totalAmount: number;
   status: OrderStatus;
+  deliveryMethod: DeliveryMethod;
   createdAt: string;
   paidAt: string | null;
   drawnAt: string | null;
   user: { email: string; name: string | null };
-  kujiEvent: { title: string; slug: string };
-  payment: { status: string; provider: string; refundedAt: string | null } | null;
-  shipment: { status: string } | null;
+  kujiEvent: { title: string; slug: string } | null;
+  orderItems: {
+    id: string;
+    productId: string | null;
+    productNameSnapshot: string;
+    priceSnapshot: number;
+    quantity: number;
+    reservationSequence: number | null;
+    paidSequence: number | null;
+    product: { id: string; name: string; type: string } | null;
+  }[];
+  payment: {
+    status: PaymentStatus;
+    provider: string;
+    method: string | null;
+    depositorName: string | null;
+    paidAt: string | null;
+    confirmedAt: string | null;
+    refundedAt: string | null;
+  } | null;
+  shipment: {
+    id: string;
+    status: string;
+    carrier: string | null;
+    trackingNumber: string | null;
+    invoiceRegisteredAt: string | null;
+  } | null;
+  pickup: {
+    id: string;
+    status: string;
+    location: string | null;
+    scheduledAt: string | null;
+    pickedUpAt: string | null;
+  } | null;
 };
 
 type ListResp = { items: OrderRow[]; nextCursor: string | null; limit: number };
 
 type FilterValues = {
   status?: OrderStatus;
+  paymentStatus?: PaymentStatus;
+  deliveryMethod?: DeliveryMethod;
   orderId?: string;
   userId?: string;
   kujiEventId?: string;
+  productId?: string;
   range?: [Dayjs, Dayjs];
 };
 
@@ -59,10 +107,29 @@ const STATUS_COLOR: Record<OrderStatus, string> = {
   PENDING_PAYMENT: "default",
   PAID: "blue",
   DRAWN: "green",
+  COMPLETED: "green",
   CANCELLED: "default",
   REFUNDED: "orange",
   FAILED: "red",
 };
+
+const ORDER_STATUSES: OrderStatus[] = [
+  "PENDING_PAYMENT",
+  "PAID",
+  "DRAWN",
+  "COMPLETED",
+  "CANCELLED",
+  "REFUNDED",
+  "FAILED",
+];
+const PAYMENT_STATUSES: PaymentStatus[] = [
+  "WAITING_DEPOSIT",
+  "DEPOSIT_CHECK_REQUIRED",
+  "PAID",
+  "REFUNDED",
+  "FAILED",
+  "REQUESTED",
+];
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -80,9 +147,12 @@ export default function OrdersPage() {
       qs.set("limit", String(PAGE_SIZE));
       if (cursor) qs.set("cursor", cursor);
       if (f.status) qs.set("status", f.status);
+      if (f.paymentStatus) qs.set("paymentStatus", f.paymentStatus);
+      if (f.deliveryMethod) qs.set("deliveryMethod", f.deliveryMethod);
       if (f.orderId) qs.set("orderId", f.orderId);
       if (f.userId) qs.set("userId", f.userId);
       if (f.kujiEventId) qs.set("kujiEventId", f.kujiEventId);
+      if (f.productId) qs.set("productId", f.productId);
       if (f.range?.[0]) qs.set("from", f.range[0].toISOString());
       if (f.range?.[1]) qs.set("to", f.range[1].toISOString());
       const res = await api<ListResp>(`/api/admin/orders?${qs.toString()}`);
@@ -129,19 +199,35 @@ export default function OrdersPage() {
       title: "주문 ID",
       dataIndex: "id",
       width: 200,
-      render: (id: string) => (
+      render: (id: string, r) => (
         <Typography.Link onClick={() => router.push(`/orders/${id}`)}>
           <Typography.Text style={{ fontSize: 12 }} copyable={{ text: id }}>
-            {id.slice(0, 14)}…
+            {r.orderNumber ?? `${id.slice(0, 14)}…`}
           </Typography.Text>
         </Typography.Link>
       ),
     },
     {
-      title: "쿠지",
-      width: 200,
+      title: "품목",
+      width: 280,
       ellipsis: true,
-      render: (_, r) => r.kujiEvent.title,
+      render: (_, r) =>
+        r.orderItems?.length ? (
+          <Space direction="vertical" size={0}>
+            {r.orderItems.slice(0, 2).map((item) => (
+              <span key={item.id}>
+                {item.productNameSnapshot} x{item.quantity}
+              </span>
+            ))}
+            {r.orderItems.length > 2 && (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                외 {r.orderItems.length - 2}건
+              </Typography.Text>
+            )}
+          </Space>
+        ) : (
+          r.kujiEvent?.title ?? "-"
+        ),
     },
     {
       title: "사용자",
@@ -157,6 +243,12 @@ export default function OrdersPage() {
     },
     { title: "수량", dataIndex: "ticketCount", width: 60 },
     {
+      title: "수령",
+      dataIndex: "deliveryMethod",
+      width: 90,
+      render: (v: DeliveryMethod) => <Tag>{v}</Tag>,
+    },
+    {
       title: "금액",
       dataIndex: "totalAmount",
       width: 100,
@@ -170,13 +262,23 @@ export default function OrdersPage() {
     },
     {
       title: "결제",
-      width: 100,
+      width: 130,
       render: (_, r) => (r.payment ? <Tag>{r.payment.status}</Tag> : "-"),
     },
     {
-      title: "배송",
-      width: 100,
-      render: (_, r) => (r.shipment ? <Tag>{r.shipment.status}</Tag> : "-"),
+      title: "배송/수령",
+      width: 170,
+      render: (_, r) =>
+        r.deliveryMethod === "SHIPPING" ? (
+          <Space direction="vertical" size={0}>
+            <Tag>{r.shipment?.status ?? "-"}</Tag>
+            <Typography.Text style={{ fontSize: 12 }}>
+              {r.shipment?.trackingNumber ?? "-"}
+            </Typography.Text>
+          </Space>
+        ) : (
+          <Tag>{r.pickup?.status ?? "-"}</Tag>
+        ),
     },
     {
       title: "",
@@ -202,11 +304,31 @@ export default function OrdersPage() {
                 "PENDING_PAYMENT",
                 "PAID",
                 "DRAWN",
+                "COMPLETED",
                 "CANCELLED",
                 "REFUNDED",
                 "FAILED",
               ].map((v) => ({ value: v, label: v }))}
             />
+          </Form.Item>
+          <Form.Item name="paymentStatus">
+            <Select
+              placeholder="payment"
+              allowClear
+              style={{ width: 170 }}
+              options={PAYMENT_STATUSES.map((v) => ({ value: v, label: v }))}
+            />
+          </Form.Item>
+          <Form.Item name="deliveryMethod">
+            <Select
+              placeholder="수령"
+              allowClear
+              style={{ width: 120 }}
+              options={["SHIPPING", "PICKUP"].map((v) => ({ value: v, label: v }))}
+            />
+          </Form.Item>
+          <Form.Item name="productId">
+            <Input placeholder="productId" allowClear style={{ width: 180 }} />
           </Form.Item>
           <Form.Item name="orderId">
             <Input placeholder="orderId (정확 일치)" allowClear style={{ width: 220 }} />

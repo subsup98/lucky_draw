@@ -11,6 +11,7 @@
 - [ ] 경품 등록
 - [ ] 재고 관리
 - [x] 주문 관리 / 환불 처리 (배송 상태 변경은 추후)
+- [x] 상품별 구매자 상황 시트
 - [x] 감사 로그 조회 (필터 + 커서 페이지네이션)
 - [ ] 공지 관리
 - [ ] 문의 관리
@@ -57,3 +58,17 @@
 - **`/shipments`**: status·trackingNumber 필터 + cursor 페이지네이션. **`/shipments/[id]`**: PATCH 모달에서 허용된 다음 상태만 Select 로 노출(ALLOWED_TRANSITIONS 그래프를 프런트에 복제). 종료 상태에서는 status disabled, 운송장/택배사만 수정 가능.
 - **`/kujis`**: status 필터 + 신규 쿠지 버튼. **`/kujis/new`**: slug kebab regex·판매 RangePicker 생성 폼. **`/kujis/[id]`**: 4종 모달 — 쿠지 수정(판매 시작 후 price/saleStartAt 잠김) / 상태 변경 / 티어 추가(isLastPrize 체크박스, 대표 상품명 inline 생성) / 재고 delta 조정(total/remaining 현재값 표시 + 사유 필수). 티어 삭제는 Popconfirm 2단 확인, DRAFT/SCHEDULED 에서만 노출.
 - 6 패키지 typecheck 통과.
+
+### 2026-06-25
+- **상품별 구매자 상황 시트 화면 추가**.
+- **`/product-buyers`**: 상품 Select + 날짜 RangePicker + cursor 페이지네이션. `GET /api/admin/orders/products/:productId/buyers`를 호출해 구매자 이름/연락처, 주문 상태, 결제 상태, 예약 순번/결제 순번, 배송지/송장, 현장 수령 상태를 표로 표시.
+- **진입 동선**: 사이드바에 "구매자 시트" 메뉴 추가, `/products` 각 상품 행에 "구매자" 버튼 추가. 버튼 클릭 시 `productId` 쿼리로 바로 해당 상품 시트를 조회.
+- **검증**: `corepack pnpm --filter @lucky/admin typecheck` 통과.
+
+### 2026-06-25 (orders)
+- **주문 상세 운영 액션 보강**.
+- **`/orders/[id]`**: 신규 상품 주문 응답에 맞춰 `orderItems`, nullable `kujiEvent`, `deliveryMethod`, `pickup`, 확장된 `payment/shipment` 필드를 표시.
+- **무통장 입금 확인**: `WAITING_DEPOSIT`/`DEPOSIT_CHECK_REQUIRED` 주문에서 `POST /api/admin/orders/:id/deposit/confirm` 호출 버튼 제공. 성공 시 상세 재조회.
+- **배송/송장 수정**: 주문 기준 `PATCH /api/admin/orders/:id/shipment` 모달 추가. 상태 전이는 프런트에서도 허용된 다음 상태만 노출하고, 택배사/운송장/보류 사유를 함께 수정.
+- **현장 수령 완료**: `PICKUP` + `WAITING` 주문에서 `POST /api/admin/orders/:id/pickup/complete` 호출 모달 제공.
+- **검증**: `corepack pnpm --filter @lucky/admin typecheck` 통과.

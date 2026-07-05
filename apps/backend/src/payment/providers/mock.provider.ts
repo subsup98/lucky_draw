@@ -70,10 +70,11 @@ export class MockPaymentProvider implements PaymentProvider {
   }
 
   async confirm(input: ConfirmInput): Promise<ConfirmResult> {
-    const { paymentIntentId, signature, providerTxId } = input.params as {
+    const { paymentIntentId, signature, providerTxId, mockMethod } = input.params as {
       paymentIntentId?: string;
       signature?: string;
       providerTxId?: string;
+      mockMethod?: string;
     };
     if (!paymentIntentId || !signature || !providerTxId) {
       throw new BadRequestException('missing mock confirm fields');
@@ -105,12 +106,13 @@ export class MockPaymentProvider implements PaymentProvider {
     return {
       providerTxId,
       amount: payload.amount,
-      method: 'CARD',
+      method: mockMethod === 'KAKAO_PAY' ? 'KAKAO_PAY' : 'CARD',
       paidAt: new Date(),
       rawResponse: {
         source: 'mock_client_confirm',
         intentId: paymentIntentId,
         providerTxId,
+        method: mockMethod === 'KAKAO_PAY' ? 'KAKAO_PAY' : 'CARD',
       },
     };
   }

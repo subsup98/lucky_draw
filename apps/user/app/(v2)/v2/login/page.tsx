@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LogIn, UserPlus } from "lucide-react";
 import { api, ApiError } from "@/app/lib/api";
@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function LoginPageV2() {
+function LoginPageV2Inner() {
   const router = useRouter();
   const sp = useSearchParams();
   const next = sp.get("next");
@@ -19,6 +19,7 @@ export default function LoginPageV2() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [birthdate, setBirthdate] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +31,7 @@ export default function LoginPageV2() {
       if (mode === "signup") {
         await api("/api/auth/signup", {
           method: "POST",
-          body: JSON.stringify({ email, password, name }),
+          body: JSON.stringify({ email, password, name, birthdate }),
         });
       }
       await api("/api/auth/login", {
@@ -65,19 +66,29 @@ export default function LoginPageV2() {
 
         <CardContent className="p-6">
           <form onSubmit={submit} className="space-y-4">
-            {mode === "signup" && (
+            {mode === "signup" && (<>
               <div className="space-y-1.5">
                 <Label htmlFor="name">이름</Label>
                 <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
               </div>
-            )}
+              <div className="space-y-1.5">
+                <Label htmlFor="birthdate">생년월일</Label>
+                <Input
+                  id="birthdate"
+                  type="date"
+                  value={birthdate}
+                  onChange={(e) => setBirthdate(e.target.value)}
+                  required
+                />
+              </div>
+            </>)}
             <div className="space-y-1.5">
               <Label htmlFor="email">이메일</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">비밀번호 (8자 이상)</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
+              <Label htmlFor="password">비밀번호 (10자 이상)</Label>
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={10} />
             </div>
 
             {err && (
@@ -103,5 +114,20 @@ export default function LoginPageV2() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPageV2() {
+  return (
+    <Suspense fallback={
+      <div className="mx-auto max-w-md px-4 py-6 md:px-6">
+        <V2Header back="/v2" backLabel="뒤로" />
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">로딩...</CardContent>
+        </Card>
+      </div>
+    }>
+      <LoginPageV2Inner />
+    </Suspense>
   );
 }

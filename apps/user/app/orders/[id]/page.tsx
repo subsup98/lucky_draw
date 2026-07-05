@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "../../lib/api";
 import type {
   DrawListResponse,
@@ -20,6 +20,7 @@ interface Loaded {
 
 export default function OrderDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [data, setData] = useState<Loaded | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -42,13 +43,14 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
         setData({ order, payment, draws, shipment });
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
-          router.replace("/login");
+          const loginPath = pathname.startsWith("/v3") ? "/v3/login" : "/login";
+          router.replace(`${loginPath}?next=${encodeURIComponent(pathname)}`);
           return;
         }
         setErr(e instanceof ApiError ? e.message : (e as Error).message);
       }
     })();
-  }, [params.id, router]);
+  }, [params.id, pathname, router]);
 
   async function cancel() {
     if (!data) return;
@@ -68,6 +70,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
   if (!data) return <main className="p-6">불러오는 중...</main>;
 
   const { order, payment, draws, shipment } = data;
+  const primaryItem = order.orderItems?.[0];
 
   return (
     <main className="mx-auto max-w-2xl p-6">
@@ -78,16 +81,34 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       </header>
 
       <h1 className="text-2xl font-bold">주문 상세</h1>
-      <p className="font-mono text-xs text-gray-500 mt-1">{order.id}</p>
+      <p className="font-mono text-xs text-gray-500 mt-1">
+        {order.orderNumber ?? order.id}
+      </p>
 
       <section className="mt-4 border rounded p-4 grid gap-1">
+        <div className="flex justify-between">
+          <span>주문 상품</span>
+          <span className="font-semibold">
+            {primaryItem
+              ? `${primaryItem.productNameSnapshot}${(order.orderItems?.length ?? 0) > 1 ? ` 외 ${(order.orderItems?.length ?? 1) - 1}건` : ""}`
+              : order.kujiEventId
+                ? "쿠지 티켓"
+                : "-"}
+          </span>
+        </div>
         <div className="flex justify-between">
           <span>상태</span>
           <span className="font-semibold">{order.status}</span>
         </div>
+        {order.deliveryMethod && (
+          <div className="flex justify-between">
+            <span>수령 방식</span>
+            <span>{order.deliveryMethod === "SHIPPING" ? "택배" : "현장 수령"}</span>
+          </div>
+        )}
         <div className="flex justify-between">
-          <span>티켓</span>
-          <span>{order.ticketCount}장 × {order.unitPrice.toLocaleString()}원</span>
+          <span>수량</span>
+          <span>{order.ticketCount}개 × {order.unitPrice.toLocaleString()}원</span>
         </div>
         <div className="flex justify-between">
           <span>합계</span>
@@ -106,6 +127,29 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           </button>
         )}
       </section>
+
+      {order.orderItems && order.orderItems.length > 0 && (
+        <section className="mt-4 border rounded p-4">
+          <h2 className="font-semibold mb-2">주문 품목</h2>
+          <ul className="grid gap-2 text-sm">
+            {order.orderItems.map((item) => (
+              <li key={item.id} className="flex justify-between border-b pb-2 last:border-b-0">
+                <span>
+                  {item.productNameSnapshot}
+                  {item.reservationSequence && (
+                    <span className="ml-2 text-xs text-gray-500">
+                      예약 #{item.reservationSequence}
+                    </span>
+                  )}
+                </span>
+                <span>
+                  {item.quantity}개 · {(item.priceSnapshot * item.quantity).toLocaleString()}원
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {payment && (
         <section className="mt-4 border rounded p-4">
@@ -169,6 +213,28 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
             </p>
             {shipment.carrier && shipment.trackingNumber && (
               <p>{shipment.carrier} · {shipment.trackingNumber}</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {order.pickup && (
+        <section className="mt-4 border rounded p-4">
+          <h2 className="font-semibold mb-2">현장 수령</h2>
+          <div className="text-sm grid gap-1">
+            <div className="flex justify-between">
+              <span>상태</span>
+              <span>{order.pickup.status}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>장소</span>
+              <span>{order.pickup.location ?? "추후 안내"}</span>
+            </div>
+            {order.pickup.pickedUpAt && (
+              <div className="flex justify-between text-gray-500">
+                <span>수령 완료</span>
+                <span>{new Date(order.pickup.pickedUpAt).toLocaleString()}</span>
+              </div>
             )}
           </div>
         </section>

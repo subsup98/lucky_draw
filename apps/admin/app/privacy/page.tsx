@@ -5,7 +5,7 @@ import Link from "next/link";
 export const dynamic = "force-static";
 
 export const metadata = {
-  title: "개인정보처리방침 - lucky_draw admin",
+  title: "개인정보처리방침 - 럭키드로우 관리자",
 };
 
 function loadPolicy(): string {
@@ -18,7 +18,7 @@ export default function PrivacyPage() {
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: 24 }}>
       <Link href="/login" style={{ fontSize: 12, color: "#666" }}>
-        ← 돌아가기
+        로그인으로 돌아가기
       </Link>
       <pre
         style={{

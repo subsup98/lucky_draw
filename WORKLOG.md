@@ -1,10 +1,22 @@
 # 전체 작업 로그 (WORKLOG.md)
 
+## 2026-06-25 - 예약 구매 입고 후 순차 발송 관리 구현
+
+- **무엇을**: 예약 구매 상품의 입고 수량 기준 순차 발송/수령 대상 조회 및 선정 기능을 구현했다.
+- **왜**: 부분 입고 시 운영자가 결제 완료 순번대로 이번 차수 처리 대상을 확정해야 하기 때문이다.
+- **결과**:
+  - 순차 발송 기준을 결제 완료 순으로 확정했다.
+  - `GET /admin/orders/products/:productId/preorder-fulfillment`로 입고 수량 기준 대상 미리보기를 제공한다.
+  - `POST /admin/orders/products/:productId/preorder-fulfillment/select`로 대상 주문 항목을 `READY_TO_FULFILL`로 확정한다.
+  - 관리자 상품별 구매자 시트에서 예약 상품 선택 시 입고 수량 입력, 대상 미리보기, 대상 선정, 처리 상태 표시를 제공한다.
+- **검증**: `corepack pnpm --filter @lucky/backend typecheck`, `corepack pnpm --filter @lucky/admin typecheck` 통과.
+- **다음 작업**: 송장 일괄 입력/업로드 정책 및 UI, 개인정보 마스킹/권한/접근 로그 보강.
+
 이 문서는 프로젝트 전체 진행 내역을 통합해서 기록하는 로그입니다.
-각 디렉토리 `PROGRESS.md`에서 의미 있는 변경/마일스톤이 발생하면 이 파일에 요약해 남겨주세요.
+각 역할 폴더 `WORKLOG.md` 또는 기존 디렉토리 `PROGRESS.md`에서 의미 있는 변경/마일스톤이 발생하면 이 파일에 요약해 남겨주세요.
 
 - **참조 전용 문서**(루트의 `README.md`, `requirements.md`, `security.md`, `policy.md`, `tasks.md`, `architecture.md`, `api.md`)는 수정하지 마세요.
-- **기록/수정 대상**: 이 `WORKLOG.md` 및 각 디렉토리의 `PROGRESS.md`.
+- **기록/수정 대상**: 이 `WORKLOG.md`, 역할별 `WORKLOG.md`, 역할별 `CHECKLIST.md`, 각 디렉토리의 기존 `PROGRESS.md`.
 
 ---
 
@@ -13,12 +25,25 @@
 ```
 lucky_draw/
 ├── README.md / requirements.md / security.md / policy.md / tasks.md / architecture.md / api.md  (참조 전용)
+├── AGENTS.md                       ← 전체 작업 규칙
+├── CHECKLIST.md                    ← 전체 마스터 체크리스트
 ├── WORKLOG.md                      ← 전체 통합 로그
+├── docs/order-sales-system.md      ← 신규 예약/일반 판매 진행 기준
+├── planning/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   └── WORKLOG.md
 ├── frontend/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   ├── WORKLOG.md
 │   ├── PROGRESS.md
 │   ├── user/PROGRESS.md            ← 사용자 웹/앱
 │   └── admin/PROGRESS.md           ← 관리자 웹
 ├── backend/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   ├── WORKLOG.md
 │   ├── PROGRESS.md
 │   ├── auth/PROGRESS.md
 │   ├── user/PROGRESS.md
@@ -33,9 +58,30 @@ lucky_draw/
 │   ├── inquiry/PROGRESS.md
 │   ├── admin/PROGRESS.md
 │   └── audit-log/PROGRESS.md
-├── database/PROGRESS.md
-├── infra/PROGRESS.md
-└── qa/PROGRESS.md
+├── database/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   ├── WORKLOG.md
+│   └── PROGRESS.md
+├── operations/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   └── WORKLOG.md
+├── policy/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   ├── WORKLOG.md
+│   └── privacy_policy.md
+├── infra/
+│   ├── AGENTS.md
+│   ├── CHECKLIST.md
+│   ├── WORKLOG.md
+│   └── PROGRESS.md
+└── qa/
+    ├── AGENTS.md
+    ├── CHECKLIST.md
+    ├── WORKLOG.md
+    └── PROGRESS.md
 ```
 
 ---
@@ -47,6 +93,200 @@ lucky_draw/
 3. 의사결정(기술 선택, 정책 해석 등)은 근거를 함께 남긴다.
 4. 막힌 부분은 `BLOCKER:` 접두로 표시.
 5. 완료된 항목은 체크(`- [x]`) 처리.
+
+---
+
+## 2026-06-24 — 예약 구매 / 일반 판매 시스템 진행 체계 보강
+
+- **무엇을**: 신규 요구사항을 기준으로 루트 `AGENTS.md`, `CHECKLIST.md`, `docs/order-sales-system.md`를 추가하고 역할별 문서 세트를 구성했다.
+- **왜**: 예약 구매, 일반 판매, 결제, 배송, 현장 수령, 매출, 알림 요구사항이 기존 쿠지 중심 문서보다 넓어져 역할별 책임과 진행 로그가 필요해졌다.
+- **결과**:
+  - 역할 폴더: `planning/`, `database/`, `backend/`, `frontend/`, `operations/`, `policy/`, `infra/`, `qa/`.
+  - 각 역할 폴더에 `AGENTS.md`, `CHECKLIST.md`, `WORKLOG.md` 추가.
+  - 기존 참조 전용 문서는 수정하지 않고 새 진행 기준 문서만 추가.
+- **다음 작업**: 기존 Prisma 스키마와 신규 DB 설계의 차이를 분석하고, MVP 범위의 상태 전이/운영 정책을 확정한다.
+
+---
+
+## 2026-06-24 — 판매 주문 DB 기반 구현 착수
+
+- **무엇을**: 예약 구매/일반 판매 MVP의 DB 기반을 `apps/backend/prisma/schema.prisma`에 반영했다.
+- **결과**:
+  - 추가 모델: `Product`, `OrderItem`, `Pickup`, `Notification`, `PrivacyAccessLog`.
+  - 보강 모델: `Order`, `Payment`, `Shipment`.
+  - 배송 상태 전이표에 `INVOICE_REGISTERED`, `ON_HOLD` 반영.
+  - 수동 마이그레이션 파일 `20260624000000_sales_order_foundation` 생성.
+- **검증**: `prisma validate`, `prisma generate`, `corepack pnpm --filter @lucky/backend typecheck` 통과.
+- **적용**: Docker/Postgres 기동 후 `prisma migrate dev`로 로컬 DB 적용 완료. `migrate status`에서 최신 상태 확인.
+- **다음 작업**: 상품 등록/주문 생성/무통장 입금 API 순서로 구현.
+
+---
+
+## 2026-06-24 — 상품 API 구현
+
+- **무엇을**: 예약 구매/일반 판매 상품을 등록·조회·수정·상태 변경할 수 있는 백엔드 API를 구현했다.
+- **결과**:
+  - 사용자: `GET /products`, `GET /products/:idOrSlug`.
+  - 관리자: `GET/POST/PATCH/DELETE /admin/products`, `PATCH /admin/products/:id/status`.
+  - 상품 판매 준비 검증, 주문 존재 시 가격/타입 변경 및 삭제 방지, 관리자 감사 로그 기록.
+- **검증**: `corepack pnpm --filter @lucky/backend typecheck`, `corepack pnpm --filter @lucky/backend build` 통과.
+- **다음 작업**: 상품 기반 주문 생성 API와 무통장 입금 접수/확인 API 구현.
+
+---
+
+## 2026-06-24 — 상품 주문 생성/무통장 입금 접수 구현
+
+- **무엇을**: `POST /sales-orders`를 추가해 예약 구매/일반 판매 상품 주문을 생성하도록 했다.
+- **결과**:
+  - `Order.kujiEventId` nullable 마이그레이션 적용.
+  - 상품 주문 생성 시 `Order`, `OrderItem`, `Payment(WAITING_DEPOSIT)`, `Shipment` 또는 `Pickup`, `Notification` 생성.
+  - 일반 판매 상품은 주문 시 재고 차감, 예약 구매 상품은 `reservationSequence` 부여.
+  - 기존 쿠지 추첨/취소 로직에 상품 주문 가드 추가.
+- **검증**: `migrate status` 최신 상태, `corepack pnpm --filter @lucky/backend typecheck`, `corepack pnpm --filter @lucky/backend build` 통과.
+- **다음 작업**: 관리자 무통장 입금 확인 API와 상품별 구매자 현황 API 구현.
+
+---
+
+## 2026-06-24 — 관리자 입금 확인/구매자 현황 API 구현
+
+- **무엇을**: 운영자가 무통장 입금을 확인하고 상품별 구매자 상황 시트를 조회할 수 있는 API를 구현했다.
+- **결과**:
+  - `POST /admin/orders/:orderId/deposit/confirm`.
+  - `GET /admin/orders/products/:productId/buyers`.
+  - 입금 확인 시 `Payment.PAID`, `Order.PAID`, 택배 주문 `Shipment.PREPARING`, 예약 구매 `paidSequence` 반영.
+  - 주문 상세/상품별 구매자 시트 조회 시 `PrivacyAccessLog` 기록.
+- **검증**: `corepack pnpm --filter @lucky/backend typecheck`, `corepack pnpm --filter @lucky/backend build` 통과.
+- **다음 작업**: 관리자 주문자 목록 확장과 송장 입력 API 정리.
+
+---
+
+## 2026-06-24 — 관리자 주문 목록/송장 입력 API 정리
+
+- **무엇을**: 관리자 주문 목록을 상품 주문 운영 기준으로 확장하고, 주문 기준 송장 입력 API를 추가했다.
+- **결과**:
+  - `GET /admin/orders`에 상품 항목, 결제, 배송, 현장 수령 요약 포함.
+  - `productId`, `deliveryMethod`, `paymentStatus` 필터 추가.
+  - `PATCH /admin/orders/:orderId/shipment` 추가.
+  - 송장 입력 시 `INVOICE_REGISTERED` 자동 전환, `invoiceRegisteredAt` 기록, 사용자 내부 알림 생성.
+  - 배송 보류 사유 `holdReason` 처리.
+- **검증**: `corepack pnpm --filter @lucky/backend typecheck`, `corepack pnpm --filter @lucky/backend build` 통과.
+- **다음 작업**: 현장 수령 완료 처리 API와 기간/상품별 판매 현황 통계 API 구현.
+
+---
+
+## 2026-06-24 — 현장 수령 완료/판매 통계 API 구현
+
+- **무엇을**: 현장 수령 완료 처리와 기간/상품별 판매 통계 API를 구현했다.
+- **결과**:
+  - `POST /admin/orders/:orderId/pickup/complete`.
+  - `GET /admin/orders/stats/sales`.
+  - `OrderStatus.COMPLETED` 추가 및 마이그레이션 적용.
+  - 통계는 `period=day|week|month|year`, `from`, `to`, `productId` 기준으로 판매 수량, 매출, 결제 완료/입금 대기/환불 건수를 반환.
+- **검증**: `migrate status` 최신 상태, `corepack pnpm --filter @lucky/backend typecheck`, `corepack pnpm --filter @lucky/backend build` 통과.
+- **다음 작업**: 관리자 프론트 화면 연결.
+
+---
+
+## 2026-06-25 — 관리자 상품별 구매자 시트 화면 연결
+
+- **무엇을**: 관리자 프론트에 상품별 구매자 상황 시트 화면을 추가했다.
+- **왜**: 운영자가 품목별 구매자, 결제 상태, 예약/결제 순번, 배송/현장 수령 상태를 한 화면에서 확인해야 하기 때문이다.
+- **결과**:
+  - `apps/admin/app/(admin)/product-buyers/page.tsx` 추가.
+  - 사이드바에 `구매자 시트` 메뉴 추가.
+  - `상품 관리` 화면의 각 상품 행에 구매자 시트 바로가기 추가.
+- **검증**: `corepack pnpm --filter @lucky/admin typecheck` 통과.
+- **다음 작업**: 주문 상세 화면에서 입금 확인, 송장 입력, 현장 수령 완료 액션을 직접 처리할 수 있게 보강한다.
+
+---
+
+## 2026-06-25 — 관리자 주문 상세 운영 액션 보강
+
+- **무엇을**: 관리자 주문 상세 화면에 무통장 입금 확인, 배송/송장 수정, 현장 수령 완료 액션을 추가했다.
+- **왜**: 운영자가 주문 상세에서 결제 확인, 송장 입력, 배송 상태 전환, 현장 수령 마감을 바로 처리해야 하기 때문이다.
+- **결과**:
+  - 신규 상품 주문의 `orderItems`, `deliveryMethod`, `pickup`, 확장 결제/배송 필드를 상세 화면에 표시.
+  - `POST /admin/orders/:orderId/deposit/confirm` 연결.
+  - `PATCH /admin/orders/:orderId/shipment` 연결.
+  - `POST /admin/orders/:orderId/pickup/complete` 연결.
+- **검증**: `corepack pnpm --filter @lucky/admin typecheck` 통과.
+- **다음 작업**: 사용자 상품 목록/상세, 수령 방식 선택, 무통장 입금 주문 생성 화면을 구현한다.
+
+---
+
+## 2026-06-25 — 사용자 상품 주문 화면 구현
+
+- **무엇을**: 사용자 앱에 상품 목록/상세와 무통장 입금 주문 생성 화면을 추가했다.
+- **왜**: 예약 구매/일반 판매 상품을 사용자가 직접 확인하고 택배 또는 현장 수령으로 주문할 수 있어야 하기 때문이다.
+- **결과**:
+  - `apps/user/app/products/page.tsx` 추가: 예약 구매/일반 판매 필터와 상품 카드 목록.
+  - `apps/user/app/products/[id]/page.tsx` 추가: 상품 상세, 수량 선택, 수령 방식 선택, 배송지 입력, 입금자명 입력, 주문 접수 완료 안내.
+  - 홈 내비게이션에 `상품` 링크 추가.
+  - `POST /api/sales-orders` 연결.
+- **검증**: `corepack pnpm --filter @lucky/user typecheck` 통과.
+- **다음 작업**: 상품 주문 내역/배송 상태 표시를 신규 주문 구조에 맞게 보강한다.
+
+---
+
+## 2026-06-25 — 상품 주문 내역/배송 상태 표시 보강
+
+- **무엇을**: 사용자 주문 조회 응답과 화면을 신규 상품 주문 구조에 맞게 보강했다.
+- **왜**: 상품 주문은 쿠지 이벤트가 없기 때문에 품목명, 수령 방식, 현장 수령 상태를 별도로 표시해야 한다.
+- **결과**:
+  - 백엔드 `GET /orders`, `GET /orders/:id` 응답에 `orderNumber`, `deliveryMethod`, `orderItems`, `pickup` 포함.
+  - 사용자 마이페이지 주문 목록에 상품명/수령 방식 표시.
+  - 사용자 주문 상세에 주문 품목, 예약 순번, 현장 수령 상태 표시.
+- **검증**:
+  - `corepack pnpm --filter @lucky/backend typecheck` 통과.
+  - `corepack pnpm --filter @lucky/user typecheck` 통과.
+- **다음 작업**: 카드/간편결제 연동 구조 점검과 사용자/관리자 알림 이벤트 발행을 진행한다.
+
+---
+
+## 2026-06-25 — 결제 연동 보류 기록 및 알림 이벤트 발행 구현
+
+- **무엇을**: 카드/카카오페이는 도메인 연결 이후 진행으로 보류 기록하고, 주문/결제/배송/현장 수령 상태 변화에 따른 내부 알림 이벤트 발행을 구현했다.
+- **왜**: 카드/카카오페이는 리다이렉트 URL과 웹훅 수신 도메인이 확정되어야 실제 검증이 가능하며, 알림은 외부 채널 연동 전에도 이벤트 큐에 누적되어야 한다.
+- **결과**:
+  - `NotificationService`, `NotificationModule` 추가.
+  - 상품 주문 접수: 사용자 주문 접수/입금 안내, 관리자 입금 확인 필요 알림.
+  - 입금 확인: 사용자 입금 확인/결제 완료/현장 수령 대기 알림.
+  - 송장/배송: 사용자 송장 등록/배송 시작/배송 완료 알림.
+  - 배송 보류: 관리자 이슈 알림.
+  - 현장 수령 완료: 사용자 수령 완료 알림.
+- **검증**: `corepack pnpm --filter @lucky/backend typecheck` 통과.
+- **OPEN**: 카드/카카오페이 결제 상태 동기화는 운영 도메인 연결 후 진행.
+- **다음 작업**: 송장 미입력/배송 지연 감지 배치와 외부 알림 채널 연결을 설계한다.
+
+---
+
+## 2026-06-25 — 일반 판매 발송/알림 운영 기준 일부 확정
+
+- **무엇을**: 일반 판매 당일 발송 마감 시간과 송장 미입력 판단 기준을 확정했다.
+- **왜**: 향후 관리자 이슈 알림과 배치 작업이 누락 주문을 판단하려면 운영 기준이 먼저 필요하기 때문이다.
+- **결과**:
+  - 일반 판매 당일 발송 대상: 당일 15:00까지 결제 완료된 택배 주문.
+  - 송장 미입력 기준: 결제 완료 후 발송 준비 상태가 1일 초과 지속되고 운송장 번호가 없는 주문.
+  - SMS/카카오톡 외부 발송은 운영자가 카카오톡 채널 생성 후 진행.
+- **OPEN**:
+  - 배송 지연 판단 기준은 추가 논의 필요.
+  - 무통장 입금 대기 만료 시간은 5분/10분 등 비교 후 결정.
+  - 관리자 이슈 담당자는 특정 인물 지정 필요.
+- **다음 작업**: 확정된 15:00/1일 기준을 바탕으로 송장 미입력 감지 배치 설계를 진행한다.
+
+---
+
+## 2026-06-25 — 송장 미입력 감지 배치 구현
+
+- **무엇을**: 일반 판매 당일 발송 대상 중 송장이 1일 이상 미입력된 주문을 감지하는 배치를 추가했다.
+- **왜**: 운영자가 송장 입력을 놓친 주문을 관리자 이슈 알림으로 자동 표면화하기 위해서다.
+- **결과**:
+  - `NotificationMonitorService` 추가.
+  - 매시간 `detect-missing-invoices` cron 실행.
+  - 감지 조건: 일반 판매 품목 포함, 택배 주문, 결제 완료, `Shipment.PREPARING`, 송장/송장입력시각 없음, 결제시각 15:00 이전, 결제 후 1일 초과.
+  - 같은 주문의 `송장 미입력` 관리자 알림이 이미 `PENDING`이면 중복 생성하지 않음.
+- **검증**: `corepack pnpm --filter @lucky/backend typecheck` 통과.
+- **다음 작업**: 배송 지연 기준 확정 후 배송 지연 감지 배치를 추가한다.
 
 ---
 
@@ -366,4 +606,76 @@ lucky_draw/
   - `/kujis/[id]` 에서 티어마다 프리셋 선택 → S상은 confetti, 일반상은 flip 등.
   - `draw.animation.enabled=false` 토글 → 연출 없이 텍스트 리스트로.
 
+### 2026-06-29
+
+- **도메인/실결제 보류 상태에서 진행 가능한 MVP 결제 흐름 보강**.
+  - 실제 도메인과 PG 연동은 `docs/deferred-integrations.md`에 보류 항목/재개 조건으로 분리.
+  - 상품 주문 DTO에 `paymentMethod` 추가: `BANK_TRANSFER`, `CARD`, `KAKAO_PAY`.
+  - 무통장 주문은 기존처럼 관리자 입금 확인으로 `PAID` 전환.
+  - 카드/카카오페이는 실제 PG 대신 Mock provider로 intent/confirm 성공 흐름 검증.
+  - 결제 완료 공통 후처리 추가: 예약 구매 `paidSequence`, 택배 `Shipment.PREPARING`, 결제 완료/현장 수령 대기 알림.
+  - 사용자 상품 상세 주문 폼에 무통장/Mock 카드/Mock 카카오페이 선택 UI 추가.
+  - `.env.example`에 Mock 결제 기본값과 Toss 전환용 환경변수 자리 추가.
+  - 루트 및 역할별 CHECKLIST/WORKLOG 갱신.
+- **다음**: 타입체크 및 가능한 범위의 로컬 검증 후, 실제 도메인/PG 준비 시 보류 문서 기준으로 redirect/webhook/운영 비밀값 전환.
+- **검증 정리**: `@lucky/backend typecheck`, `@lucky/user typecheck`, `@lucky/backend build` 통과. `@lucky/user build`는 5분 제한 재시도 후에도 자식 `node.exe` 프로세스가 남아 장시간 실행되어 보류했다. 남은 일반 Node/Next 프로세스는 종료했으며, 다음 재검증 전 pnpm workspace shim/Next 실행 경로를 먼저 점검한다.
+
 <!-- 이후 진행 내역을 아래에 이어 붙여주세요 -->
+# 2026-07-01 Deployment Note
+
+- 무엇을 / AWS EC2 단일 인스턴스에 Docker Compose 기반 운영 배포를 완료하고 `nizigen.co.kr`, `www`, `admin`, `api` 도메인을 HTTPS로 연결했다.
+- 왜 / 예약 구매 + 일반 판매 온라인 주문 시스템을 외부에서 접속 가능한 운영형 환경으로 검증하기 위해서다.
+- 결과 / 사용자 사이트 `https://nizigen.co.kr`, 관리자 `https://admin.nizigen.co.kr`, API `https://api.nizigen.co.kr/api/health`가 정상 응답한다. Postgres, Redis, backend, user, admin, nginx 컨테이너가 실행 중이며 Let's Encrypt 인증서와 webroot 기반 무중단 자동 갱신 cron을 설정했다.
+- 다음 작업 / 관리자 로그인 실제 점검, 초기 판매 데이터 등록, 결제 mock/실 PG 전환 결정, DB 백업 정책, AWS Parameter Store 기반 비밀값 이전, 비용 알림 확인을 이어간다.
+# 2026-07-03 사용자 쇼핑몰형 프론트 테스트 개편
+
+- 무엇을 / comics-art.co.kr 참고 느낌으로 사용자 프론트 홈과 상품 목록을 쇼핑몰형으로 개편한다.
+- 왜 / 예약 구매 + 일반 판매 온라인 주문 시스템을 실제 쇼핑몰처럼 탐색하고 테스트할 수 있어야 한다.
+- 결과 / 사용자 홈과 상품 목록에 쇼핑몰형 헤더, 검색, 카테고리, 상품 카드, 랭킹/예약 섹션을 적용했다. 백엔드 API 지연 시 데모 상품으로 전환해 테스트 화면이 멈추지 않도록 보완했고 `@lucky/user` 타입체크를 통과했다.
+- 다음 작업 / 실제 운영 상품 이미지/카테고리 반영, 상품 상세 페이지 쇼핑몰형 개편, 관리자 상품 이미지 등록 흐름 확인.
+
+# 2026-07-03 v3 storefront API 연동 시작
+
+- 무엇을 / 쇼핑몰형 프론트를 `/v3` 라우트로 분리하고 공개 상품 API 및 기존 판매 주문 API 흐름에 연결했다.
+- 왜 / 기존 기능을 보존하면서 배포 후보 화면을 별도로 검증하기 위해서다.
+- 결과 / `/v3`, `/v3/products`, `/v3/products/[id]` 추가. 목록은 `GET /api/products`, 상세/주문은 기존 `GET /api/products/:idOrSlug`, `POST /api/sales-orders`, mock 결제 흐름을 재사용한다. `@lucky/user` 타입체크와 `/v3`, `/v3/products` 200 응답 확인.
+- 다음 작업 / v3 상세/주문 화면 디자인 통합, 백엔드 실데이터 시드/관리자 상품 등록 확인, 배포 전 E2E 체크리스트 정리.
+
+# 2026-07-03 로컬/배포 차이 및 이미지 API 점검
+
+- 무엇을 / 로컬 Docker DB/Redis, 백엔드 API, v3 상품 이미지 경로를 배포 설정과 비교했다.
+- 왜 / 배포 시 오류 원인이 현재 로컬 상태와 배포 설정 차이인지 확인하기 위해서다.
+- 결과 / Windows에서 기존 `POSTGRES_PORT=55432` 바인딩이 금지되어 DB 포트를 `15432`로 변경하고 컨테이너를 재생성했다. 백엔드 health, `GET /api/products`, `/uploads/4ab5a5f653e36309fc25672d5123de0a.jpg`, Next rewrite `/api/products`와 `/uploads/...` 모두 200 응답을 확인했다. 배포 nginx는 아직 `/`를 `/v2`로 redirect한다.
+- 다음 작업 / 배포 시 루트 진입점을 `/v3`로 전환할지 결정하고, 운영 서버에서 새 이미지 빌드/마이그레이션/컨테이너 재시작 후 API와 업로드 볼륨을 확인한다.
+
+# 2026-07-03 v3 이미지 데모 상품 삽입
+
+- 무엇을 / 로컬 DB에 `v3-demo-*` 상품 6개를 추가하고 기존 업로드 이미지 `/uploads/4ab5a5f653e36309fc25672d5123de0a.jpg`를 연결했다.
+- 왜 / v3 상품 카드, 목록 필터, 상세 진입에서 실제 이미지가 렌더링되는지 빠르게 테스트하기 위해서다.
+- 결과 / `http://localhost:3000/api/products`, `http://localhost:3000/uploads/4ab5a5f653e36309fc25672d5123de0a.jpg`, `http://localhost:3000/v3/products` 모두 200 응답을 확인했다.
+- 다음 작업 / 관리자 업로드로 여러 실제 이미지를 넣고 상품별 서로 다른 이미지 표시 및 배포 볼륨 반영을 테스트한다.
+
+# 2026-07-03 v3 테스트 배포 정책 정리
+
+- 무엇을 / v3는 운영 루트로 승격하지 않고 `/v3` 직접 접근 테스트 라우트로 유지한다.
+- 왜 / 아직 확정 화면이 아니므로 기존 `/v2` 운영 진입은 그대로 두고, v3를 외부 테스트용으로만 검증하기 위해서다.
+- 결과 / Nginx 루트 redirect는 기존처럼 `/v2` 유지. v3의 데모 상품 fallback은 개발 환경에서만 동작하도록 조정해 운영에서는 실제 API 오류를 숨기지 않게 했다. `@lucky/user` 타입체크 통과.
+- 다음 작업 / EC2에서 최신 코드 반영 후 user/backend/nginx 컨테이너를 재빌드/재시작하고 `https://nizigen.co.kr/v3`, `/v3/products`, `/api/products`, `/uploads/...`를 확인한다.
+
+# 2026-07-03 GitHub Actions v3 preview CI/CD 추가
+
+- 무엇을 / 운영 루트 `/v2`는 유지하고 `/v3` 테스트 화면만 배포할 수 있는 GitHub Actions 수동 배포 워크플로우를 추가했다.
+- 왜 / 현재 EC2의 `/home/ubuntu/luckydraw`는 Git repo가 아니라 tar 기반 배포 디렉터리라, GitHub Actions가 소스를 압축해 업로드하고 Docker Compose를 재빌드하는 방식이 필요하다.
+- 결과 / `.github/workflows/deploy-v3-preview.yml`, `docs/github-actions-v3-preview-deploy.md` 추가. 필수 Secrets는 `EC2_HOST`, `EC2_SSH_KEY`다.
+- 다음 작업 / GitHub Secrets 등록 후 `Actions > Deploy v3 preview > Run workflow`로 첫 테스트 배포를 실행한다.
+## 2026-07-03
+
+- 무엇을 / v3 비로그인 사용자 보호 링크 분기와 로그인 후 복귀 흐름을 운영 배포했다.
+- 왜 / 마이페이지 버튼 클릭 시 비로그인 사용자에게 마이페이지가 잠깐 보인 뒤 로그인으로 이동하는 UX 문제가 있었다.
+- 결과 / `@lucky/user typecheck` 통과, 운영 `user` 컨테이너 재빌드 성공, `/v3/products`, `/v3/login`, `/v3/me`, `/api/health`가 200 응답한다. 첫 빌드는 `useSearchParams` Suspense 요구사항으로 실패했으나 `window.location.search` 기반 next 처리로 수정 후 재빌드에 성공했다.
+- 다음 작업 / 브라우저에서 비로그인 세션은 `/v3/login?next=/v3/me`, 로그인 세션은 `/v3/me`로 이동하는지 확인한다.
+
+- 무엇을 / v3 테스트 배포에 쿠지 API 연동을 추가하고 운영 서버 user 컨테이너를 재빌드했다.
+- 왜 / 관리자에서 생성한 쿠지가 v3에 표시되지 않는 원인이 v3가 `/api/products`만 조회하는 구조였기 때문이다.
+- 결과 / `/v3`, `/v3/kujis`, `/v3/kujis/[id]` 빌드가 통과했고, 배포 API `/api/kujis`에서 `배포테스트` 쿠지가 정상 반환됨을 확인했다.
+- 다음 작업 / v3 화면에서 관리자 상품/쿠지 등록, 이미지 업로드, 상세 진입, 주문 흐름을 순서대로 실테스트한다.

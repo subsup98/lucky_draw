@@ -21,9 +21,11 @@ import { api, ApiError } from "../../lib/api";
 type ShipmentStatus =
   | "PENDING"
   | "PREPARING"
+  | "INVOICE_REGISTERED"
   | "SHIPPED"
   | "IN_TRANSIT"
   | "DELIVERED"
+  | "ON_HOLD"
   | "RETURNED"
   | "CANCELLED"
   | "FAILED";
@@ -46,7 +48,8 @@ type Row = {
     ticketCount: number;
     status: string;
     user: { email: string; name: string | null };
-    kujiEvent: { title: string };
+    kujiEvent: { title: string } | null;
+    orderItems?: { productNameSnapshot: string; quantity: number }[];
   };
 };
 
@@ -55,26 +58,52 @@ type ListResp = { items: Row[]; nextCursor: string | null; limit: number };
 const STATUS_COLOR: Record<ShipmentStatus, string> = {
   PENDING: "default",
   PREPARING: "blue",
+  INVOICE_REGISTERED: "purple",
   SHIPPED: "cyan",
   IN_TRANSIT: "geekblue",
   DELIVERED: "green",
+  ON_HOLD: "orange",
   RETURNED: "orange",
   CANCELLED: "default",
   FAILED: "red",
 };
 
+const STATUS_LABEL: Record<ShipmentStatus, string> = {
+  PENDING: "대기",
+  PREPARING: "준비중",
+  INVOICE_REGISTERED: "송장등록",
+  SHIPPED: "발송",
+  IN_TRANSIT: "배송중",
+  DELIVERED: "완료",
+  ON_HOLD: "보류",
+  RETURNED: "반송",
+  CANCELLED: "취소",
+  FAILED: "실패",
+};
+
 const STATUS_OPTIONS: ShipmentStatus[] = [
   "PENDING",
   "PREPARING",
+  "INVOICE_REGISTERED",
   "SHIPPED",
   "IN_TRANSIT",
   "DELIVERED",
+  "ON_HOLD",
   "RETURNED",
   "CANCELLED",
   "FAILED",
 ];
 
 const PAGE_SIZE = 25;
+
+function orderTitle(row: Row) {
+  if (row.order.kujiEvent) return row.order.kujiEvent.title;
+  const orderItems = row.order.orderItems ?? [];
+  if (orderItems.length === 0) return "상품 주문";
+  return orderItems
+    .map((item) => `${item.productNameSnapshot} x${item.quantity}`)
+    .join(", ");
+}
 
 export default function ShipmentsPage() {
   const router = useRouter();
@@ -144,10 +173,10 @@ export default function ShipmentsPage() {
       ),
     },
     {
-      title: "쿠지",
-      width: 180,
+      title: "주문 품목",
+      width: 220,
       ellipsis: true,
-      render: (_, r) => r.order.kujiEvent.title,
+      render: (_, r) => orderTitle(r),
     },
     {
       title: "수령인",
@@ -163,7 +192,7 @@ export default function ShipmentsPage() {
       title: "상태",
       dataIndex: "status",
       width: 110,
-      render: (s: ShipmentStatus) => <Tag color={STATUS_COLOR[s]}>{s}</Tag>,
+      render: (s: ShipmentStatus) => <Tag color={STATUS_COLOR[s]}>{STATUS_LABEL[s]}</Tag>,
     },
     {
       title: "택배사",
@@ -197,7 +226,7 @@ export default function ShipmentsPage() {
               placeholder="status"
               allowClear
               style={{ width: 160 }}
-              options={STATUS_OPTIONS.map((v) => ({ value: v, label: v }))}
+              options={STATUS_OPTIONS.map((v) => ({ value: v, label: STATUS_LABEL[v] }))}
             />
           </Form.Item>
           <Form.Item name="trackingNumber">

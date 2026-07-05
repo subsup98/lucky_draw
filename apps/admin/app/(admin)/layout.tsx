@@ -9,9 +9,12 @@ type Me = { id: string; username: string; role: string };
 
 const items = [
   { key: "/dashboard", label: "대시보드" },
+  { key: "/products", label: "상품 관리" },
+  { key: "/product-buyers", label: "구매자 시트" },
   { key: "/kujis", label: "쿠지 관리" },
   { key: "/orders", label: "주문 관리" },
   { key: "/shipments", label: "배송 관리" },
+  { key: "/sales", label: "매출 통계" },
   { key: "/users", label: "회원 관리" },
   { key: "/notices", label: "공지 관리" },
   { key: "/inquiries", label: "문의 관리" },
@@ -35,7 +38,7 @@ export default function AdminShellLayout({ children }: { children: React.ReactNo
         if (e instanceof ApiError && e.status === 401) {
           router.replace("/login");
         } else {
-          message.error("세션 확인 실패");
+          message.error("관리자 세션 확인에 실패했습니다.");
         }
       })
       .finally(() => setLoading(false));
@@ -62,12 +65,13 @@ export default function AdminShellLayout({ children }: { children: React.ReactNo
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      <Layout.Sider theme="light" width={220}>
-        <div style={{ padding: 16, fontWeight: 600, fontSize: 16 }}>lucky_draw admin</div>
+      <Layout.Sider theme="light" width={240}>
+        <div style={{ padding: 16, fontWeight: 700, fontSize: 16, lineHeight: 1.35, wordBreak: "keep-all" }}>럭키드로우 관리자</div>
         <Menu
           mode="inline"
           selectedKeys={[items.find((i) => pathname?.startsWith(i.key))?.key ?? ""]}
-          items={items.map((i) => ({ ...i, onClick: () => router.push(i.key) }))}
+          style={{ borderInlineEnd: 0 }}
+          items={items.map((i) => ({ ...i, style: { height: "auto", minHeight: 40, lineHeight: 1.35, whiteSpace: "normal" }, onClick: () => router.push(i.key) }))}
         />
       </Layout.Sider>
       <Layout>
@@ -86,7 +90,7 @@ export default function AdminShellLayout({ children }: { children: React.ReactNo
           </Typography.Text>
           <Button onClick={onLogout}>로그아웃</Button>
         </Layout.Header>
-        <Layout.Content style={{ padding: 24 }}>{children}</Layout.Content>
+        <Layout.Content style={{ minWidth: 0, padding: 24, overflowX: "auto" }}>{children}</Layout.Content>
       </Layout>
     </Layout>
   );

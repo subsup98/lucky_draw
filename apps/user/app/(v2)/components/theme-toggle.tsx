@@ -5,6 +5,9 @@ import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 
+const MoonIcon = Moon as React.ComponentType<{ className?: string }>;
+const SunIcon = Sun as React.ComponentType<{ className?: string }>;
+
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
@@ -21,9 +24,9 @@ export function ThemeToggle() {
       aria-label="테마 전환"
     >
       {mounted ? (
-        isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />
+        isDark ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />
       ) : (
-        <Moon className="h-4 w-4 opacity-0" />
+        <MoonIcon className="h-4 w-4 opacity-0" />
       )}
     </Button>
   );

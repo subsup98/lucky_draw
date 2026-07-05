@@ -7,7 +7,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "prepare": "node scripts/prepare-hooks.cjs",
     "check:policy": "node scripts/check-policy.mjs",
     "dev": "turbo run dev",
     "build": "turbo run build",

@@ -17,4 +17,10 @@ export class UpdateShipmentDto {
   @MinLength(1)
   @MaxLength(60)
   trackingNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  holdReason?: string;
 }

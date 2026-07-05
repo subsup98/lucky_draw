@@ -18,6 +18,7 @@ import { CurrentAdmin } from '../admin-auth/current-admin.decorator';
 import { extractAuditCtx } from '../audit-log/audit-context';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { FieldCipherService } from '../crypto/field-cipher.service';
+import { NotificationService } from '../notification/notification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateShipmentDto } from './dto/admin-shipment.dto';
 
@@ -32,17 +33,20 @@ type EncryptedShipmentFields = {
 /**
  * 허용 전이 그래프.
  *
- * - 정방향: PENDING → PREPARING → SHIPPED → IN_TRANSIT → DELIVERED
+ * - 정방향: PENDING → PREPARING → INVOICE_REGISTERED → SHIPPED → IN_TRANSIT → DELIVERED
  * - 예외: PENDING/PREPARING 에서 CANCELLED 로 이동 가능(환불 hook).
  *         SHIPPED/IN_TRANSIT 에서 RETURNED 로 이동 가능(반송).
  *         모든 활성 상태에서 FAILED 로 이동 가능(배송 실패).
+ *         주소 오류·재고 지연 등은 ON_HOLD 로 보류 가능.
  * - 역방향(예: SHIPPED → PREPARING) 금지 — 운영자가 실수로 상태를 되돌리는 것을 막는다.
  */
 const ALLOWED_TRANSITIONS: Record<ShipmentStatus, readonly ShipmentStatus[]> = {
-  PENDING: ['PREPARING', 'CANCELLED', 'FAILED'],
-  PREPARING: ['SHIPPED', 'CANCELLED', 'FAILED'],
-  SHIPPED: ['IN_TRANSIT', 'DELIVERED', 'RETURNED', 'FAILED'],
-  IN_TRANSIT: ['DELIVERED', 'RETURNED', 'FAILED'],
+  PENDING: ['PREPARING', 'ON_HOLD', 'CANCELLED', 'FAILED'],
+  PREPARING: ['INVOICE_REGISTERED', 'SHIPPED', 'ON_HOLD', 'CANCELLED', 'FAILED'],
+  INVOICE_REGISTERED: ['SHIPPED', 'ON_HOLD', 'CANCELLED', 'FAILED'],
+  SHIPPED: ['IN_TRANSIT', 'DELIVERED', 'ON_HOLD', 'RETURNED', 'FAILED'],
+  IN_TRANSIT: ['DELIVERED', 'ON_HOLD', 'RETURNED', 'FAILED'],
+  ON_HOLD: ['PREPARING', 'INVOICE_REGISTERED', 'SHIPPED', 'CANCELLED', 'FAILED'],
   DELIVERED: [],
   CANCELLED: [],
   RETURNED: [],
@@ -56,6 +60,7 @@ export class AdminShipmentController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
     private readonly cipher: FieldCipherService,
+    private readonly notifications: NotificationService,
   ) {}
 
   private decryptShipment<T extends EncryptedShipmentFields>(s: T): T {
@@ -102,6 +107,12 @@ export class AdminShipmentController {
             status: true,
             user: { select: { email: true, name: true } },
             kujiEvent: { select: { title: true } },
+            orderItems: {
+              select: {
+                productNameSnapshot: true,
+                quantity: true,
+              },
+            },
           },
         },
       },
@@ -125,6 +136,12 @@ export class AdminShipmentController {
           include: {
             user: { select: { id: true, email: true, name: true, phone: true } },
             kujiEvent: { select: { id: true, title: true, slug: true } },
+            orderItems: {
+              select: {
+                productNameSnapshot: true,
+                quantity: true,
+              },
+            },
           },
         },
       },
@@ -159,24 +176,36 @@ export class AdminShipmentController {
     if (
       dto.status === undefined &&
       dto.carrier === undefined &&
-      dto.trackingNumber === undefined
+      dto.trackingNumber === undefined &&
+      dto.holdReason === undefined
     ) {
-      throw new BadRequestException('at least one of {status, carrier, trackingNumber} required');
+      throw new BadRequestException(
+        'at least one of {status, carrier, trackingNumber, holdReason} required',
+      );
     }
 
     const data: Prisma.ShipmentUpdateInput = {};
     const now = new Date();
 
-    if (dto.status !== undefined && dto.status !== shipment.status) {
+    const nextStatus =
+      dto.status ??
+      (dto.carrier !== undefined && dto.trackingNumber !== undefined
+        ? 'INVOICE_REGISTERED'
+        : undefined);
+
+    if (nextStatus !== undefined && nextStatus !== shipment.status) {
       const allowed = ALLOWED_TRANSITIONS[shipment.status];
-      if (!allowed.includes(dto.status)) {
+      if (!allowed.includes(nextStatus)) {
         throw new ConflictException(
-          `invalid transition: ${shipment.status} → ${dto.status}`,
+          `invalid transition: ${shipment.status} → ${nextStatus}`,
         );
       }
-      data.status = dto.status;
-      if (dto.status === 'SHIPPED' && !shipment.shippedAt) data.shippedAt = now;
-      if (dto.status === 'DELIVERED' && !shipment.deliveredAt) data.deliveredAt = now;
+      data.status = nextStatus;
+      if (nextStatus === 'INVOICE_REGISTERED' && !shipment.invoiceRegisteredAt) {
+        data.invoiceRegisteredAt = now;
+      }
+      if (nextStatus === 'SHIPPED' && !shipment.shippedAt) data.shippedAt = now;
+      if (nextStatus === 'DELIVERED' && !shipment.deliveredAt) data.deliveredAt = now;
     }
 
     if (dto.carrier !== undefined) data.carrier = dto.carrier;
@@ -184,8 +213,36 @@ export class AdminShipmentController {
       // SHIPPED 이상에서만 trackingNumber 의미가 있으므로 경고 대신 일단 허용.
       data.trackingNumber = dto.trackingNumber;
     }
+    if (dto.holdReason !== undefined) data.holdReason = dto.holdReason;
 
     const updated = await this.prisma.shipment.update({ where: { id }, data });
+    if (nextStatus === 'INVOICE_REGISTERED') {
+      await this.notifications.safeUserOrder({
+        orderId: shipment.orderId,
+        messageType: 'INVOICE_REGISTERED',
+        message: '송장번호가 등록되었습니다.',
+      });
+    }
+    if (nextStatus === 'SHIPPED') {
+      await this.notifications.safeUserOrder({
+        orderId: shipment.orderId,
+        messageType: 'SHIPPING_STARTED',
+        message: '배송이 시작되었습니다.',
+      });
+    }
+    if (nextStatus === 'DELIVERED') {
+      await this.notifications.safeUserOrder({
+        orderId: shipment.orderId,
+        messageType: 'SHIPPING_COMPLETED',
+        message: '배송이 완료되었습니다.',
+      });
+    }
+    if (nextStatus === 'ON_HOLD') {
+      await this.notifications.safeAdminIssue({
+        orderId: shipment.orderId,
+        message: `배송 보류 주문이 발생했습니다. 주문 ID ${shipment.orderId}`,
+      });
+    }
     await this.audit.record({
       actorType: 'ADMIN',
       adminUserId: admin.id,
@@ -195,10 +252,11 @@ export class AdminShipmentController {
       metadata: {
         orderId: shipment.orderId,
         from: shipment.status,
-        to: data.status ?? shipment.status,
+        to: nextStatus ?? shipment.status,
         changed: Object.keys(data),
         carrier: dto.carrier,
         trackingNumber: dto.trackingNumber,
+        holdReason: dto.holdReason,
       },
       ctx: extractAuditCtx(req),
     });

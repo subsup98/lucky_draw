@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [birthdate, setBirthdate] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -22,14 +23,15 @@ export default function LoginPage() {
       if (mode === "signup") {
         await api("/api/auth/signup", {
           method: "POST",
-          body: JSON.stringify({ email, password, name }),
+          body: JSON.stringify({ email, password, name, birthdate }),
         });
       }
       await api("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      router.push("/");
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "failed");
     } finally {
@@ -43,7 +45,7 @@ export default function LoginPage() {
         {mode === "login" ? "로그인" : "회원가입"}
       </h1>
       <form onSubmit={submit} className="flex flex-col gap-3">
-        {mode === "signup" && (
+        {mode === "signup" && (<>
           <input
             className="border rounded px-3 py-2"
             placeholder="이름"
@@ -51,7 +53,15 @@ export default function LoginPage() {
             onChange={(e) => setName(e.target.value)}
             required
           />
-        )}
+          <input
+            className="border rounded px-3 py-2"
+            type="date"
+            value={birthdate}
+            onChange={(e) => setBirthdate(e.target.value)}
+            required
+            aria-label="생년월일"
+          />
+        </>)}
         <input
           className="border rounded px-3 py-2"
           type="email"
@@ -63,11 +73,11 @@ export default function LoginPage() {
         <input
           className="border rounded px-3 py-2"
           type="password"
-          placeholder="비밀번호 (8자 이상)"
+          placeholder="비밀번호 (10자 이상)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          minLength={8}
+          minLength={10}
         />
         {err && <p className="text-sm text-red-600">{err}</p>}
         <button

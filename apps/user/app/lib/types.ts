@@ -27,11 +27,30 @@ export interface KujiDetail extends KujiSummary {
 
 export interface OrderResponse {
   id: string;
-  kujiEventId: string;
+  orderNumber?: string | null;
+  kujiEventId: string | null;
   ticketCount: number;
   unitPrice: number;
   totalAmount: number;
   status: string;
+  deliveryMethod?: "SHIPPING" | "PICKUP";
+  orderItems?: Array<{
+    id: string;
+    productId: string | null;
+    productNameSnapshot: string;
+    priceSnapshot: number;
+    quantity: number;
+    reservationSequence: number | null;
+    paidSequence: number | null;
+    product: { id: string; name: string; type: string } | null;
+  }>;
+  pickup?: {
+    id: string;
+    status: string;
+    location: string | null;
+    scheduledAt: string | null;
+    pickedUpAt: string | null;
+  } | null;
   createdAt: string;
 }
 

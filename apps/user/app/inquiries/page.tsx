@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { api, ApiError } from "../lib/api";
 
 type Category = "ACCOUNT" | "PAYMENT" | "DRAW" | "SHIPMENT" | "REFUND" | "ETC";
@@ -29,6 +29,7 @@ const STATUS_LABEL: Record<Status, string> = {
 
 export default function InquiriesPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -44,7 +45,8 @@ export default function InquiriesPage() {
       setRows(res);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
-        router.replace("/login");
+        const loginPath = pathname.startsWith("/v3") ? "/v3/login" : "/login";
+        router.replace(`${loginPath}?next=${encodeURIComponent(pathname)}`);
         return;
       }
       setErr(e instanceof ApiError ? e.message : "failed");

@@ -1,0 +1,107 @@
+name: Deploy v3 preview
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-v3-preview
+  cancel-in-progress: false
+
+env:
+  EC2_HOST: ${{ secrets.EC2_HOST }}
+  EC2_USER: ${{ secrets.EC2_USER || 'ubuntu' }}
+  EC2_PORT: ${{ secrets.EC2_PORT || '22' }}
+  DEPLOY_DIR: ${{ secrets.EC2_DEPLOY_DIR || '/home/ubuntu/luckydraw' }}
+
+jobs:
+  deploy:
+    name: Upload source and rebuild preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$EC2_HOST" || { echo "Missing secret: EC2_HOST"; exit 1; }
+          test -n "$EC2_SSH_KEY" || { echo "Missing secret: EC2_SSH_KEY"; exit 1; }
+
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.codex' \
+            --exclude='.codex-tooling' \
+            --exclude='node_modules' \
+            --exclude='**/node_modules' \
+            --exclude='**/.next' \
+            --exclude='**/.turbo' \
+            --exclude='**/dist' \
+            --exclude='**/*.tsbuildinfo' \
+            --exclude='.env' \
+            --exclude='.env.prod' \
+            --exclude='apps/backend/.env' \
+            --exclude='apps/backend/uploads' \
+            --exclude='infra/certbot/conf' \
+            --exclude='infra/certbot/www' \
+            --exclude='preview*.html' \
+            -czf /tmp/luckydraw-release.tgz .
+
+      - name: Prepare SSH
+        shell: bash
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$EC2_PORT" -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "$EC2_PORT" -i ~/.ssh/deploy_key /tmp/luckydraw-release.tgz "$EC2_USER@$EC2_HOST:/tmp/luckydraw-release.tgz"
+
+      - name: Deploy on EC2
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "$EC2_PORT" -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" \
+            "DEPLOY_DIR='$DEPLOY_DIR' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          if [ ! -d "$DEPLOY_DIR" ]; then
+            echo "Deploy directory not found: $DEPLOY_DIR" >&2
+            exit 1
+          fi
+
+          cd "$DEPLOY_DIR"
+          test -f .env.prod || { echo ".env.prod not found in $DEPLOY_DIR" >&2; exit 1; }
+
+          cp .env.prod /tmp/luckydraw.env.prod
+          tar -xzf /tmp/luckydraw-release.tgz -C "$DEPLOY_DIR"
+          mv /tmp/luckydraw.env.prod "$DEPLOY_DIR/.env.prod"
+
+          docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build user backend nginx
+          docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+REMOTE
+
+      - name: Smoke check
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fS --max-time 20 https://nizigen.co.kr/v3 >/dev/null
+          curl -fS --max-time 20 https://nizigen.co.kr/v3/products >/dev/null
+          curl -fS --max-time 20 https://nizigen.co.kr/api/products >/dev/null
+          curl -fS --max-time 20 https://api.nizigen.co.kr/api/health >/dev/null

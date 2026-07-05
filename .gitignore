@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+.codex/
+.codex-tooling/
 
 # Build outputs
 dist/
@@ -20,6 +22,7 @@ out/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+preview*.html
 
 # OS / Editor
 .DS_Store
