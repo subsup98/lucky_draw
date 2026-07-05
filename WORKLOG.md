@@ -7,6 +7,13 @@
 - **결과**: 수동 `workflow_dispatch`와 `main` push 자동 실행을 모두 지원하도록 변경했다.
 - **다음 작업**: Actions 실행 결과와 배포 smoke check를 확인한다.
 
+## 2026-07-05 - v3 preview 워크플로 env 해석 보정
+
+- **무엇을**: GitHub Actions 전역 `env`의 secrets/default 표현식을 제거하고 bash step에서 환경값을 검증하도록 바꿨다.
+- **왜**: workflow run이 job 생성 전 즉시 실패해, 워크플로 해석 단계에서 막히는 위험 지점을 제거하기 위해서다.
+- **결과**: 필수 secrets 검증과 선택값 기본값 처리를 `Resolve deployment environment` step으로 분리했다.
+- **다음 작업**: 새 Actions 실행에서 실제 deploy job이 생성되는지 확인한다.
+
 ## 2026-06-25 - 예약 구매 입고 후 순차 발송 관리 구현
 
 - **무엇을**: 예약 구매 상품의 입고 수량 기준 순차 발송/수령 대상 조회 및 선정 기능을 구현했다.

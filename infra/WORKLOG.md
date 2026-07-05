@@ -7,6 +7,13 @@
 - 결과 / `.github/workflows/deploy-v3-preview.yml`에 `push.branches: [main]`을 추가하고, 실행 문서에 수동 실행과 main push 자동 실행 경로를 함께 기록했다.
 - 다음 작업 / GitHub Actions 실행 결과를 확인하고, EC2 secrets 누락 또는 SSH/빌드 실패가 있으면 해당 단계별로 보정한다.
 
+## 2026-07-05 - v3 preview 워크플로 env 해석 보정
+
+- 무엇을 / GitHub Actions 전역 `env`에서 secrets/default 표현식을 제거하고 첫 번째 bash step에서 배포 환경값을 검증해 `GITHUB_ENV`로 전달하도록 수정했다.
+- 왜 / 워크플로가 job 생성 전 즉시 실패해, GitHub의 워크플로 해석 단계에서 expressions/context 문제가 발생할 가능성을 줄이기 위해서다.
+- 결과 / 필수 secrets는 `EC2_HOST`, `EC2_SSH_KEY`만 검증하고 선택값 `EC2_USER`, `EC2_PORT`, `EC2_DEPLOY_DIR`는 bash 기본값으로 처리한다.
+- 다음 작업 / main push 후 job 생성 여부와 deploy/smoke check 결과를 확인한다.
+
 ## 2026-07-01 - EC2 Docker build prepare script 누락 수정
 
 - 무엇을 / 운영 Dockerfile 3종이 `pnpm install` 전에 `scripts/prepare-hooks.cjs`를 함께 복사하도록 수정했다.
