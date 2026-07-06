@@ -21,6 +21,13 @@
 - 결과 / bash에는 들여쓰기 제거 후 정상 heredoc으로 전달되고, YAML 파서는 해당 줄을 block scalar 내용으로 해석한다.
 - 다음 작업 / 새 Actions 실행에서 deploy job 생성 여부를 확인한다.
 
+## 2026-07-06 - v3 preview SSH 준비 단계 보강
+
+- 무엇을 / GitHub Actions SSH 준비 단계에서 `ssh-keyscan` 실패가 즉시 배포 중단으로 이어지지 않도록 하고, `scp`/`ssh`에 `StrictHostKeyChecking=accept-new`와 접속 timeout을 추가했다.
+- 왜 / GitHub Secrets 등록 후 `Resolve deployment environment`는 통과했지만 `Prepare SSH` 단계에서 실패해, 실제 업로드/원격 실행 단계까지 도달하지 못했기 때문이다.
+- 결과 / host key 수집이 실패해도 실제 SSH 연결 단계에서 접속/인증 오류를 확인할 수 있게 됐다.
+- 다음 작업 / 새 push로 preview 배포를 재실행하고 `Upload source archive` 또는 `Deploy on EC2` 단계 결과를 확인한다.
+
 ## 2026-07-01 - EC2 Docker build prepare script 누락 수정
 
 - 무엇을 / 운영 Dockerfile 3종이 `pnpm install` 전에 `scripts/prepare-hooks.cjs`를 함께 복사하도록 수정했다.
