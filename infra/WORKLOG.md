@@ -28,6 +28,13 @@
 - 결과 / host key 수집이 실패해도 실제 SSH 연결 단계에서 접속/인증 오류를 확인할 수 있게 됐다.
 - 다음 작업 / 새 push로 preview 배포를 재실행하고 `Upload source archive` 또는 `Deploy on EC2` 단계 결과를 확인한다.
 
+## 2026-07-06 - EC2 직접 SSH v3 preview 배포 완료
+
+- 무엇을 / 로컬 소스를 압축해 EC2 `3.105.194.101`의 `/tmp/luckydraw-release.tgz`로 업로드하고 `/home/ubuntu/luckydraw`에 반영한 뒤 `backend`, `user`, `nginx`를 재시작했다.
+- 왜 / GitHub Actions runner에서 EC2 SSH 업로드가 timeout되어, 현재 수정사항을 우선 운영 preview에 반영하기 위해 직접 SSH 배포로 전환했다.
+- 결과 / 기존 `.env.prod`를 보존했고 `backend`, `user` 컨테이너가 새 이미지로 재생성됐다. `https://nizigen.co.kr/v3`, `/v3/products`, `/api/products`, `https://api.nizigen.co.kr/api/health` smoke check가 통과했다.
+- 다음 작업 / GitHub Actions 배포를 재개하려면 EC2 보안그룹 SSH inbound가 GitHub-hosted runner에서도 접근 가능한지 정책을 결정한다.
+
 ## 2026-07-01 - EC2 Docker build prepare script 누락 수정
 
 - 무엇을 / 운영 Dockerfile 3종이 `pnpm install` 전에 `scripts/prepare-hooks.cjs`를 함께 복사하도록 수정했다.

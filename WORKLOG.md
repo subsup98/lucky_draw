@@ -28,6 +28,13 @@
 - **결과**: `ssh-keyscan` 실패는 warning으로 처리하고, 실제 접속 단계에서 timeout과 host key accept-new 정책을 적용했다.
 - **다음 작업**: 새 Actions 실행에서 EC2 업로드와 원격 Docker Compose 배포 결과를 확인한다.
 
+## 2026-07-06 - EC2 직접 SSH v3 preview 배포 완료
+
+- **무엇을**: GitHub Actions 대신 로컬에서 EC2로 소스 압축본을 업로드해 `backend`, `user`, `nginx`를 직접 재시작했다.
+- **왜**: GitHub Actions runner의 SSH 업로드가 timeout되어, 현재 수정사항을 먼저 preview 운영 환경에 반영하기 위해서다.
+- **결과**: `https://nizigen.co.kr/v3`, `/v3/products`, `/api/products`, `https://api.nizigen.co.kr/api/health` 확인이 통과했다.
+- **다음 작업**: GitHub Actions 자동 배포를 다시 쓰려면 EC2 SSH 접근 정책을 GitHub runner까지 허용할지 결정한다.
+
 ## 2026-06-25 - 예약 구매 입고 후 순차 발송 관리 구현
 
 - **무엇을**: 예약 구매 상품의 입고 수량 기준 순차 발송/수령 대상 조회 및 선정 기능을 구현했다.
